@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>NeuroVis v4.0 | Pyodide Edge Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- NEW: PYODIDE WEBASSEMBLY ENGINE -->
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+    <style>
+        /* DARK MODE RESET */
+        body { margin: 0; background: #050505; color: #e0e0e0; font-family: 'Courier New', monospace; height: 100vh; display: flex; overflow: hidden; }
+        
+        /* LAYOUT */
+        .panel { flex: 1; padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+        .border-right { border-right: 1px solid #222; }
+        
+        /* TOP BAR */
+        .status-bar { position: absolute; top: 0; left: 0; width: 100%; padding: 10px; display: flex; justify-content: space-between; box-sizing: border-box; background: #111; border-bottom: 1px solid #333; z-index: 100; }
+        .status-text { font-size: 12px; color: #888; font-weight: bold; }
+        .status-warn { color: #ffcc00; animation: flash 1s infinite; }
+        .status-good { color: #00ff9d; } 
+        .status-bad  { color: #ff4444; } 
+        
+        @keyframes flash { 50% { opacity: 0.5; } }
+        
+        /* OVERLAY CSS */
+        .overlay { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.98); z-index: 999; 
+            display: flex; flex-direction: column; justify-content: center; align-items: center; 
+        }
+        .hidden { display: none !important; }
+        
+        /* CALIBRATION VISUAL TARGET */
+        .focus-circle {
+            width: 40px; height: 40px;
+            background: #fff;
+            border-radius: 50%;
+            animation: pulse-calib 4s infinite ease-in-out;
+            margin-top: 50px;
+            box-shadow: 0 0 30px #fff;
+        }
+
+        @keyframes pulse-calib {
+            0% { transform: scale(1); opacity: 0.5; }
+            50% { transform: scale(1.5); opacity: 1.0; }
+            100% { transform: scale(1); opacity: 0.5; }
+        }
+
+        /* TEXT CONTAINERS */
+        .mist-container { text-align: center; width: 100%; max-width: 700px; }
+        #valence-status { font-size: 24px; color: #888; letter-spacing: 5px; margin-bottom: 20px; }
+        #valence-instruction { font-size: 32px; font-weight: bold; color: #fff; line-height: 1.5; }
+
+        /* CHAOS GAME UI */
+        .chaos-problem { 
+            font-size: 80px; font-weight: bold; margin: 40px 0; 
+            color: #fff; letter-spacing: 2px;
+            text-shadow: 0 0 20px rgba(255,255,255,0.1);
+        }
+        .mist-input { 
+            background: #111; border: 2px solid #333; color: #fff; 
+            font-size: 50px; padding: 20px; width: 400px; 
+            text-align: center; font-family: inherit; border-radius: 12px; 
+            outline: none; text-transform: uppercase; 
+        }
+        .mist-input:focus { border-color: #00ff00; }
+        .pressure-bar-container { margin-top: 50px; background: #222; border-radius: 8px; padding: 20px; border: 1px solid #333; }
+        .p-bar-label { display: flex; justify-content: space-between; font-size: 12px; color: #888; margin-bottom: 8px; text-transform: uppercase; font-weight: bold; }
+        .p-track { height: 15px; background: #000; border-radius: 8px; margin-bottom: 15px; position: relative; overflow: hidden; }
+        .p-fill { height: 100%; transition: width 0.5s ease; }
+
+        /* GRID & DOT */
+        #grid-container {
+            width: 500px; height: 500px;
+            border: 2px solid #333; border-radius: 50%;
+            position: relative;
+            background: radial-gradient(circle, #1a1a1a 0%, #000 70%);
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+            margin-top: 20px;
+        }
+        .axis { position: absolute; background: #333; opacity: 0.5; }
+        .axis-x { width: 100%; height: 1px; top: 50%; }
+        .axis-y { height: 100%; width: 1px; left: 50%; }
+        .zone-label { position: absolute; font-size: 10px; font-weight: bold; color: #444; text-transform: uppercase; }
+        .z-tr { top: 20%; right: 20%; color: #550055; }
+        .z-tl { top: 20%; left: 20%; color: #550000; } 
+        .z-br { bottom: 20%; right: 20%; color: #005500; }
+        .z-bl { bottom: 20%; left: 20%; color: #004455; }
+        .bullseye {
+            position: absolute; width: 125px; height: 125px;
+            border: 1px dashed #444; border-radius: 50%;
+            top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.02);
+        }
+        #dot {
+            width: 16px; height: 16px; border-radius: 50%;
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            transition: top 1.5s cubic-bezier(0.25, 1, 0.5, 1), 
+                        left 1.5s cubic-bezier(0.25, 1, 0.5, 1),
+                        background 0.5s ease,
+                        box-shadow 0.5s ease,
+                        opacity 0.2s ease;
+            border: 2px solid #fff;
+        }
+
+        /* RIGHT PANEL */
+        .hardware-box {
+            width: 90%; background: #0a0a0a; border: 1px solid #333; padding: 10px;
+            margin-bottom: 15px; border-radius: 8px; display: flex; justify-content: space-between;
+        }
+        .hw-item { font-size: 11px; color: #888; text-align: center; width: 33%; }
+        .hw-val { display: block; font-size: 14px; font-weight: bold; margin-top: 4px; color: #eee; }
+        .batt-low { color: #ff4444 !important; }
+        .batt-ok { color: #00ff9d !important; }
+
+        .debug-box {
+            width: 90%; background: #111; border: 1px solid #333; padding: 15px;
+            margin-bottom: 20px; border-radius: 8px;
+        }
+        .debug-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 12px; align-items: center; }
+        .debug-val { font-weight: bold; color: #00ccff; }
+        .input-group { display: flex; gap: 5px; margin-top: 10px; align-items: center; }
+        .input-dark { background: #000; border: 1px solid #444; color: #fff; padding: 5px; width: 60px; text-align: center; font-size: 9px; }
+        .input-label { font-size: 9px; color: #666; width: 80px; text-align: right; margin-right: 5px; }
+
+        .src-opt { cursor: pointer; color: #555; font-weight: bold; transition: 0.2s; margin-left: 5px; }
+        .src-opt:hover { color: #888; }
+        .src-active { color: #00ccff; text-shadow: 0 0 5px rgba(0, 204, 255, 0.5); }
+
+        .slider-container { margin-bottom: 15px; border-bottom: 1px dashed #333; padding-bottom: 10px; }
+        .slider-label { display: flex; justify-content: space-between; font-size: 10px; color: #888; margin-bottom: 5px; }
+        input[type=range] { width: 100%; accent-color: #00ccff; cursor: pointer; }
+        
+        .lock-icon { cursor: pointer; font-size: 14px; margin-left: 5px; user-select: none; }
+        .locked { color: #ff4444; }
+        .unlocked { color: #00ccff; }
+
+        .stat-container { width: 90%; margin-top: 10px; }
+        .stat-row { margin-bottom: 12px; }
+        .stat-header { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; color: #888; font-weight: bold; }
+        .bar-bg { width: 100%; height: 6px; background: #222; border-radius: 3px; overflow: hidden; }
+        .bar-fill { height: 100%; width: 0%; transition: width 1.0s ease-out, background 0.5s ease; }
+
+        .btn-group { display: flex; gap: 10px; margin-top: 30px; }
+        .btn { 
+            background: #111; border: 1px solid #444; color: #fff; 
+            padding: 6px 12px; font-family: inherit; font-weight: bold; 
+            cursor: pointer; text-transform: uppercase; font-size: 10px; 
+            transition: 0.2s;
+        }
+        .btn:hover { border-color: #888; background: #222; }
+        .btn-rec { color: #ff5555; border-color: #552222; }
+        .btn-rec.active { background: #ff0000; color: #000; box-shadow: 0 0 15px #ff0000; border-color: #ff0000; }
+        
+        .protocol-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; width: 100%; margin-top: 10px; }
+        .btn-calib { color: #ffff00; border-color: #555500; width: 100%; grid-column: span 2; padding: 8px;}
+        .btn-unified { color: #00ff00; border-color: #005500; background: #111; grid-column: span 2; padding: 8px; font-size: 11px; }
+        .btn-unified:hover { background: #002200; }
+        
+        .btn-train { color: #00ccff; border-color: #005555; background: #111; grid-column: span 2; padding: 8px; font-size: 11px; }
+        .btn-train:hover { background: #002222; }
+        
+        /* CUSTOM TOOLTIPS */
+        .tooltip-container { position: relative; cursor: help; }
+        .custom-tooltip { 
+            position: absolute; bottom: 105%; left: 50%; transform: translateX(-50%); 
+            background: rgba(0, 0, 0, 0.9); color: #ccc; padding: 12px; border-radius: 6px; 
+            font-size: 11px; font-family: 'Courier New', monospace; width: 220px; 
+            text-align: center; z-index: 1000; opacity: 0; visibility: hidden; 
+            transition: opacity 0.2s ease, bottom 0.2s ease; pointer-events: none; 
+            border: 1px solid #333; box-shadow: 0 4px 10px rgba(0,0,0,0.8); line-height: 1.4; 
+        }
+
+        /* AX TICKER STYLES */
+        .ax-ticker-container { width: 90%; height: 250px; margin-top: 20px; border: 1px solid #222; border-radius: 8px; background: #111; padding: 10px; position: relative; }
+
+        .tooltip-container:hover .custom-tooltip { opacity: 1; visibility: visible; bottom: 110%; }
+    </style>
+</head>
+<body>
+
+    <div id="mist-overlay" class="overlay hidden">
+        <div id="mist-status" style="font-size: 24px; color: #888; margin-bottom: 20px; letter-spacing: 5px;">PREPARING...</div>
+        
+        <div id="mist-game" class="mist-container hidden">
+            <div id="instruction-text" style="color: #666; font-size: 14px; margin-bottom: 20px;">SOLVE</div>
+            <div id="mist-problem" class="chaos-problem">--</div>
+            <input type="text" id="mist-input" class="mist-input" onkeydown="checkEnter(event)" autocomplete="off" autofocus>
+            <div id="timer-bar" style="height:6px; background:#ff0000; width:100%; margin-top:30px; transition: width 1s linear; border-radius: 3px;"></div>
+            <div class="pressure-bar-container">
+                <div class="p-bar-label"><span>YOU</span><span id="score-you">0</span></div>
+                <div class="p-track"><div id="bar-you" class="p-fill" style="width:0%; background:#00ff00;"></div></div>
+                <div class="p-bar-label"><span style="color:#ff5555;">AVERAGE USER</span><span id="score-avg" style="color:#ff5555;">0</span></div>
+                <div class="p-track"><div id="bar-avg" class="p-fill" style="width:0%; background:#ff0000;"></div></div>
+            </div>
+        </div>
+
+        <div id="valence-game" class="mist-container hidden">
+            <div id="valence-status">VALENCE CALIBRATION</div>
+            <div id="valence-instruction">EYES CLOSED</div>
+            <div id="calib-visual" class="focus-circle hidden"></div>
+        </div>
+    </div>
+
+    <div id="tagging-modal" class="overlay hidden">
+        <div style="background: #111; border: 1px solid #333; padding: 30px; border-radius: 10px; text-align: center; max-width: 400px;">
+            <div style="font-size: 18px; color: #fff; margin-bottom: 10px;">SESSION COMPLETE</div>
+            <div style="font-size: 12px; color: #888; margin-bottom: 20px;">Categorize this session to ensure accurate historical tracking.</div>
+            
+            <select id="tag-select" class="mist-input" style="width: 100%; font-size: 16px; padding: 10px; margin-bottom: 10px; cursor: pointer;">
+                <option value="">-- SELECT A TAG --</option>
+            </select>
+            
+            <div style="margin-bottom: 10px; font-size: 10px; color: #555;">OR</div>
+            
+            <input type="text" id="new-tag-input" class="mist-input" style="width: 80%; font-size: 16px; padding: 10px; margin-bottom: 20px;" placeholder="CREATE NEW TAG..." autocomplete="off">
+            
+            <br>
+            <button class="btn btn-unified" style="width: 100%; padding: 12px; font-size: 14px;" onclick="saveToDatabase()">SAVE SESSION & DOWNLOAD CSV</button>
+        </div>
+    </div>
+
+    <div id="import-modal" class="overlay hidden">
+        <div style="background: #111; border: 1px solid #00ccff; padding: 30px; border-radius: 10px; text-align: center; max-width: 400px;">
+            <div style="font-size: 18px; color: #00ccff; margin-bottom: 10px;">IMPORT HISTORICAL SESSION</div>
+            <div style="font-size: 12px; color: #888; margin-bottom: 20px;">Assign a tag to this historical data to properly route it into your climate trends.</div>
+            
+            <select id="import-tag-select" class="mist-input" style="width: 100%; font-size: 16px; padding: 10px; margin-bottom: 10px; cursor: pointer;">
+                <option value="">-- SELECT A TAG --</option>
+            </select>
+            
+            <div style="margin-bottom: 10px; font-size: 10px; color: #555;">OR</div>
+            
+            <input type="text" id="import-new-tag-input" class="mist-input" style="width: 80%; font-size: 16px; padding: 10px; margin-bottom: 20px;" placeholder="CREATE NEW TAG..." autocomplete="off">
+            
+            <br>
+            <button class="btn btn-unified" style="width: 100%; padding: 12px; font-size: 14px; border-color: #00ccff; color: #00ccff;" onclick="saveToDatabase()">IMPORT TO DATABASE</button>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <div class="status-text" id="status-conn" style="min-width:120px;">BOOTING ENGINE...</div>
+        <div class="status-text" id="status-motion" style="margin-left: 20px; color: #00ff9d;">MOTION: STABLE</div>
+        <div class="status-text" id="status-spec" style="margin-left: 20px; text-align: left; flex: 1;">SPECTRAL: --</div>
+        <div class="status-text" style="color: #fff; margin-right: 20px;">NEUROVIS v4.0 | EDGE</div>
+        <div class="status-text" id="status-batt" style="margin-right: 20px; color: #00ff9d;">BATT: --%</div>
+        <div class="status-text" id="status-bio">HR: -- | HRV: --</div>
+    </div>
+
+    <div class="panel border-right">
+        <div id="grid-container" class="tooltip-container">
+            <div class="custom-tooltip"><span style="color:#00ffcc; font-weight:bold;">THE CIRCUMPLEX</span><br>A 2D emotional map. The vertical axis measures Energy (Arousal), and the horizontal axis measures Positivity (Valence/FAA).</div>
+            <div class="axis axis-x"></div>
+            <div class="axis axis-y"></div>
+            <div class="zone-label z-tr">ENGAGEMENT</div>
+            <div class="zone-label z-tl">VIGILANCE</div>
+            <div class="zone-label z-br">FLOW</div>
+            <div class="zone-label z-bl">DETACHMENT</div>
+            <div class="bullseye"></div>
+            <div id="dot"></div>
+        </div>
+        
+        <h1 id="zone-display" style="margin-top: 30px; font-size: 32px; color: #444; transition: color 0.5s;">NEUTRAL</h1>
+        
+       <div class="tooltip-container" style="width:100%; margin-top:5px; margin-bottom: 10px; text-align:center; max-width:250px;">
+            <div class="custom-tooltip"><span style="color:#00ffcc; font-weight:bold;">AFFECTIVE TONE (FAA)</span><br>Measures emotional drive. Approach (Right) indicates positive engagement. Withdraw (Left) indicates negative/avoidant mood.</div>
+            <div style="font-size:10px; color:#888; margin-bottom:3px;">FAA % TIME (WITHDRAW | APPROACH)</div>
+            <div style="display:flex; height:10px; background:#222; border-radius:5px; overflow:hidden;">
+                <div id="faa-withdraw" style="width:50%; background:#ff4444; transition:width 0.2s;"></div>
+                <div id="faa-approach" style="width:50%; background:#00ffcc; transition:width 0.2s;"></div>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:10px; color:#666; margin-top:2px;">
+                <span id="faa-withdraw-pct">50%</span><span id="faa-approach-pct">50%</span>
+            </div>
+        </div>
+
+        <div class="tooltip-container" style="width:100%; margin-bottom: 15px; text-align:center; max-width:250px;">
+            <div class="custom-tooltip"><span style="color:#00ccff; font-weight:bold;">COGNITIVE LOAD (FBA)</span><br>Measures active brain processing. Logic (Right) indicates executive focus. Stress (Left) indicates hyper-vigilance or rumination.</div>
+            <div style="font-size:10px; color:#888; margin-bottom:3px;">FBA % TIME (STRESS | LOGIC)</div>
+            <div style="display:flex; height:10px; background:#222; border-radius:5px; overflow:hidden;">
+                <div id="fba-stress" style="width:50%; background:#ff8800; transition:width 0.2s;"></div>
+                <div id="fba-logic" style="width:50%; background:#00ccff; transition:width 0.2s;"></div>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:10px; color:#666; margin-top:2px;">
+                <span id="fba-stress-pct">50%</span><span id="fba-logic-pct">50%</span>
+            </div>
+        </div>
+        
+        <div class="btn-group" style="flex-direction: column; width: 80%;">
+            <div style="display:flex; gap:10px;">
+                <button class="btn btn-rec" id="btn-rec" style="flex:1" onclick="toggleRec()">REC</button>
+                <button class="btn" onclick="stopAndSave()" style="flex:1">SAVE</button>
+                <button class="btn" onclick="resetMetrics()" style="flex:1; border-color: #880000; color: #ff5555;">RESET</button>
+                
+
+            </div>
+
+            <button class="btn" style="width: 100%; margin-top: 10px; border-color: #00ccff; color: #00ccff;" onclick="window.open('MindRelay.html', '_blank')">VIEW HISTORY & REPORTS</button>
+            
+            <button class="btn" style="display: none;" onclick="toggleGrid()">[Toggle Circumplex Display]</button>
+            
+            <div class="protocol-grid">
+                <button class="btn btn-unified" style="display: none;" id="btn-unified" onclick="startUnified()">CLINICAL ASSESSMENT (15m)</button>
+                <button class="btn btn-train" id="btn-train" onclick="startTraining()">DAILY SESSION (12m)</button>
+                <button class="btn btn-calib" id="btn-calib" onclick="startCalib()">AUTO-CALIBRATE (1m)</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        
+        <div class="hardware-box">
+            <div class="hw-item">
+                MUSE BATT
+                <span class="hw-val" id="muse-batt">--%</span>
+                <button class="btn" style="padding: 2px 4px; font-size: 8px; margin-top: 5px;" id="btn-muse">CONNECT</button>
+            </div>
+            <div class="hw-item">
+                SIGNAL STATUS
+                <span class="hw-val" id="sig-status">WAIT</span>
+            </div>
+            <div class="hw-item">
+                POLAR BATT
+                <span class="hw-val" id="polar-batt">--%</span>
+                <button class="btn" style="padding: 2px 4px; font-size: 8px; margin-top: 5px;" onclick="connectPolarDevice()">CONNECT</button>
+            </div>
+        </div>
+        
+        <div class="debug-box">
+            <div style="color:#666; font-size:10px; margin-bottom:10px; border-bottom:1px solid #333; padding-bottom:5px;">LIVE SENSOR DEBUG (OVERRIDES)</div>
+
+            <div class="debug-row">
+                <span>HR SOURCE:</span>
+                <div>
+                    <span id="src-polar" class="src-opt" onclick="setSource('POLAR')">POLAR</span>
+                    <span style="color:#333">|</span>
+                    <span id="src-muse" class="src-opt" onclick="setSource('MUSE')">MUSE</span>
+                </div>
+            </div>
+
+            <div class="debug-row">
+                <span>EMOTIONAL POLARITY (FAA):</span>
+                <span class="debug-val" id="val-faa">0.000</span>
+            </div>
+            <div class="debug-row">
+                <span>LIVE HRV (rMSSD):</span>
+                <span class="debug-val" id="val-hrv">0</span>
+            </div>
+            <div class="debug-row">
+                <span>LIVE HR (BPM):</span>
+                <span class="debug-val" id="val-hr">0</span>
+            </div>
+            
+            <div style="color:#666; font-size:10px; margin-bottom:10px; border-top:1px dashed #333; padding-top:10px; font-weight:bold;">
+                LAST CALIBRATED: <span id="calib-timestamp" style="color:#00ff9d;">NO DATA</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                <div class="input-group">
+                    <span class="input-label">REST HR:</span>
+                    <input type="number" id="rest-input" class="input-dark" style="border:none; pointer-events:none;" readonly placeholder="--">
+                </div>
+                <div class="input-group">
+                    <span class="input-label">FAA OFF:</span>
+                    <input type="number" id="faa-input" class="input-dark" style="border:none; pointer-events:none;" readonly placeholder="--">
+                </div>
+                <div class="input-group">
+                    <span class="input-label">AX NULL:</span>
+                    <input type="number" id="ax-input" class="input-dark" style="border:none; pointer-events:none;" readonly placeholder="--">
+                </div>
+                <div class="input-group">
+                    <span class="input-label">AXX NULL:</span>
+                    <input type="number" id="axx-input" class="input-dark" style="border:none; pointer-events:none;" readonly placeholder="--">
+                </div>
+                <div class="input-group">
+                    <span class="input-label">NULL HRV:</span>
+                    <input type="number" id="null-hrv-input" class="input-dark" style="border:none; pointer-events:none;" readonly placeholder="--">
+                </div>
+                <div class="input-group">
+                    <span class="input-label">NULL R-BETA:</span>
+                    <input type="number" id="null-rbeta-input" class="input-dark" style="border:none; pointer-events:none;" readonly placeholder="--">
+                </div>
+            </div>
+        </div>
+
+        <h2 style="color: #666; font-size: 14px; margin-bottom: 10px;">SESSION DISTRIBUTION</h2>
+        <div id="stats-wrapper" style="width: 90%; display: flex; flex-direction: column; align-items: center;"></div>
+        
+        <div class="ax-ticker-container tooltip-container">
+            <div class="custom-tooltip"><span style="color:#ffcc00; font-weight:bold;">LIVE STRESS TICKER</span><br>Plots your Somatic (Body) and Cognitive (Brain) stress load over a rolling 1-minute window to detect real-time stress escalations.</div>
+            <canvas id="axTickerChart"></canvas>
+        </div>
+
+    </div>
+
+    <script type="module">
+        import { connectMuse } from './web-muse/muse-bundle.js';
+
+        const PREFERRED_VOICE_NAME = "Google US English"; 
+        
+        let sessionId = localStorage.getItem("neurovis_session_id");
+        if (!sessionId) {
+            sessionId = "NVS-" + Math.random().toString(36).substr(2, 8).toUpperCase();
+            localStorage.setItem("neurovis_session_id", sessionId);
+        }
+        console.log("🔒 Local Session ID:", sessionId);
+
+        let isRecording = false;
+        let isGridVisible = true;
+        let isImportingCSV = false;
+        let pendingSessionData = null;
+
+        // ==========================================
+        // PYODIDE BOOTSTRAPPER (Replaces WebSockets)
+        // ==========================================
+        window.pyodideReady = false;
+        
+        async function initPyodide() {
+            document.getElementById('status-conn').innerText = "LOADING PYODIDE...";
+            document.getElementById('status-conn').className = "status-text status-warn";
+            
+            // 1. Load the WebAssembly Python Runtime
+            window.pyodide = await loadPyodide();
+            
+            // 2. Load SciPy and Dependencies
+            document.getElementById('status-conn').innerText = "INSTALLING SCIPY...";
+            await window.pyodide.loadPackage(['numpy', 'pandas', 'scipy']);
+            
+            document.getElementById('status-conn').innerText = "MOUNTING ENGINE...";
+            
+            // 3. Fetch our Python scripts from the local server
+            const hwCode = await (await fetch('hardware.py')).text();
+            const nvCode = await (await fetch('Neurovis.py')).text();
+            
+            // 4. Write them to Pyodide's virtual memory file system
+            window.pyodide.FS.writeFile('/hardware.py', hwCode);
+            window.pyodide.FS.writeFile('/Neurovis.py', nvCode);
+            
+            // 5. Mount the neurovis engine
+            await window.pyodide.runPythonAsync(`
+                import sys
+                sys.path.append('/')
+                import Neurovis
+            `);
+            
+            window.pyodideReady = true;
+            document.getElementById('status-conn').innerText = "ENGINE READY";
+            document.getElementById('status-conn').className = "status-text status-good";
+
+            // 6. Send the INIT command to get starting baselines
+            window.ws.send(JSON.stringify({cmd: 'INIT'}));
+        }
+        
+        // Start the engine load
+        initPyodide();
+
+        // 7. MOCK WEBSOCKET OBJECT (To keep UI code untouched)
+        window.ws = {
+            send: (msgString) => {
+                if(!window.pyodideReady) return;
+                const cmdObj = JSON.parse(msgString);
+                try {
+                    const pyCmd = window.pyodide.toPy(cmdObj);
+                    // Call process_tick(sid, hardware_payload_dict, ui_command)
+                    const pyResult = window.pyodide.globals.get('Neurovis').process_tick(sessionId, null, pyCmd);
+                    pyCmd.destroy(); // Free Wasm Memory
+                    
+                    if (pyResult) {
+                        const jsResult = pyResult.toJs({ dict_converter: Object.fromEntries });
+                        pyResult.destroy();
+                        if (jsResult.type === "LIVE") window.updateDashboardUI(jsResult);
+                        if (jsResult.alerts && jsResult.alerts.length > 0) window.handlePythonAlerts(jsResult.alerts);
+                    }
+                } catch (err) {
+                    console.error("Pyodide Command Error:", err);
+                }
+            }
+        };
+
+        // ==========================================
+        // LOCAL DATABASE (IndexedDB) INITIALIZATION v7
+        // ==========================================
+        let db;
+        const dbRequest = indexedDB.open("NeurovisDB", 8); // Bumped to v8 to force upgrade
+
+        dbRequest.onerror = (event) => { console.error(" IndexedDB Error: ", event.target.error); };
+        dbRequest.onupgradeneeded = (event) => {
+            db = event.target.result;
+            if (!db.objectStoreNames.contains('sessions')) {
+                const sessionStore = db.createObjectStore("sessions", { keyPath: "session_id" });
+                sessionStore.createIndex("timestamp", "timestamp", { unique: false });
+                sessionStore.createIndex("tag", "tag", { unique: false });
+            }
+            if (!db.objectStoreNames.contains('climate_chunks')) db.createObjectStore("climate_chunks", { keyPath: "session_id" });
+            if (!db.objectStoreNames.contains('raw_data')) db.createObjectStore("raw_data", { keyPath: "session_id" });
+            if (!db.objectStoreNames.contains('tags')) {
+                const tagStore = db.createObjectStore("tags", { keyPath: "name" });
+                tagStore.add({ name: "MORNING COFFEE" });
+                tagStore.add({ name: "DEEP WORK" });
+            }
+            // --- NEW: CALIBRATION STORE ---
+            if (!db.objectStoreNames.contains('calibrations')) {
+                db.createObjectStore("calibrations", { keyPath: "timestamp" });
+            }
+        }; 
+
+        dbRequest.onsuccess = (event) => {
+            db = event.target.result;
+            loadTagsIntoDropdown();
+            restoreLatestCalibration(); // Trigger the restore
+        };
+
+        function restoreLatestCalibration() {
+            if (!db) return;
+            // First check if the table exists to prevent errors on a fresh database
+            if (!db.objectStoreNames.contains('calibrations')) return; 
+
+            const tx = db.transaction(["calibrations"], "readonly");
+            const store = tx.objectStore("calibrations");
+            const req = store.openCursor(null, "prev"); // Grabs the newest entry
+            
+            req.onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (cursor && window.pyodideReady) {
+                    const c = cursor.value;
+                    console.log(" Restoring latest calibration from DB:", c.timestamp);
+                    
+                    // --- NEW: Update UI Timestamp ---
+                    const calibDate = new Date(c.timestamp);
+                    document.getElementById('calib-timestamp').innerText = calibDate.toLocaleString([], {
+                        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                    });
+
+                    // Fire the saved baseline configs directly back into Python
+                    window.ws.send(JSON.stringify({cmd:'SET_BASELINE', val: c.base_hrv}));
+                    window.ws.send(JSON.stringify({cmd:'SET_RESTING_HR', val: c.resting_hr}));
+                    window.ws.send(JSON.stringify({cmd:'SET_FAA_OFFSET', val: c.faa_offset}));
+                    window.ws.send(JSON.stringify({cmd:'SET_AX_OFFSET', val: c.ax_offset}));
+                    window.ws.send(JSON.stringify({cmd:'SET_AXX_OFFSET', val: c.axx_offset}));
+                    window.ws.send(JSON.stringify({cmd:'SET_NULL_HRV', val: c.null_hrv}));
+                    window.ws.send(JSON.stringify({cmd:'SET_NULL_R_BETA', val: c.null_r_beta}));
+                } else if (cursor) {
+                    // Pyodide takes a few seconds to boot. If it isn't ready, try again in 500ms.
+                    setTimeout(restoreLatestCalibration, 500);
+                }
+            };
+        }
+
+        // ==========================================
+        // WEB BLUETOOTH HARDWARE BRIDGE (Replaces Port 8766)
+        // ==========================================
+        let states = { muse: false, polar: false };
+        let buffers = { eeg_L: [], eeg_R: [], ppg_ir: [], polar_rr: [], polar_hr: 0, polar_batt: 0, battery: 0, gyro_raw: [] };
+        
+        function runPyodideEngine() {
+            if (!window.pyodideReady) {
+                setTimeout(runPyodideEngine, 50);
+                return;
+            }
+            
+            if (window.museBatteryTrapdoor) buffers.battery = window.museBatteryTrapdoor;
+
+            const payloadDict = {
+                muse_connected: states.muse, polar_connected: states.polar,
+                eeg_L: [...buffers.eeg_L], eeg_R: [...buffers.eeg_R],
+                muse_ppg: [...buffers.ppg_ir],
+                polar_rr: [...buffers.polar_rr], polar_hr: buffers.polar_hr, 
+                polar_batt: buffers.polar_batt, battery: buffers.battery, 
+                gyro_raw: [...buffers.gyro_raw]
+            };
+
+            // Clear the buffers
+            buffers.eeg_L = []; buffers.eeg_R = []; buffers.ppg_ir = [];
+            buffers.polar_rr = []; buffers.gyro_raw = [];
+
+            try {
+                let pyPayload = window.pyodide.toPy(payloadDict);
+                let pyResult = window.pyodide.globals.get('Neurovis').process_tick(sessionId, pyPayload, null);
+                pyPayload.destroy(); // Free Wasm Memory
+
+                if (pyResult) {
+                    let jsResult = pyResult.toJs({ dict_converter: Object.fromEntries });
+                    pyResult.destroy();
+                    
+                    if (jsResult.type === "LIVE") window.updateDashboardUI(jsResult);
+                    if (jsResult.alerts && jsResult.alerts.length > 0) window.handlePythonAlerts(jsResult.alerts);
+                }
+            } catch (err) {
+                console.error("Pyodide Data Ingestion Error:", err);
+            }
+
+            // Yield control back to the browser for 75ms so Bluetooth packets aren't dropped
+            setTimeout(runPyodideEngine, 75); 
+        }
+        
+        runPyodideEngine(); // Kick off the loop
+
+
+        // ==========================================
+        // MUSE S & POLAR NATIVE DRIVERS
+        // ==========================================
+        document.getElementById('btn-muse').onclick = async () => {
+            try {
+                const muse = await connectMuse();
+                states.muse = true;
+                muse.telemetryData?.subscribe(telemetry => {
+                    if(telemetry?.batteryLevel) buffers.battery = telemetry.batteryLevel;
+                });
+                setInterval(() => {
+                    try {
+                        if (muse.eeg) {
+                            while (true) {
+                                const frame = muse.eeg.map(buffer => buffer?.read());
+                                if (frame[1] === null || frame[1] === undefined) break;
+                                buffers.eeg_L.push(frame[1]);
+                                buffers.eeg_R.push(frame[2]);
+                            }
+                        }
+                        if (muse.ppg) {
+                            while (true) {
+                                const irVal = muse.ppg[1]?.read(); 
+                                if (irVal === null || irVal === undefined) break;
+                                buffers.ppg_ir.push(irVal);
+                            }
+                        }
+                        if (muse.gyroscope) {
+                            while (true) {
+                                const gx = muse.gyroscope[0]?.read();
+                                const gy = muse.gyroscope[1]?.read();
+                                const gz = muse.gyroscope[2]?.read();
+                                if (gx === null || gx === undefined) break;
+                                buffers.gyro_raw.push([gx, gy, gz]);
+                            }
+                        }
+                    } catch (e) {}
+                }, 20);
+            } catch (err) { console.error("Muse Error:", err); }
+        };
+
+        window.connectPolarDevice = async () => {
+            try {
+                const device = await navigator.bluetooth.requestDevice({ 
+                    filters: [{ services: ['heart_rate'] }],
+                    optionalServices: ['battery_service']
+                });
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService('heart_rate');
+                const characteristic = await service.getCharacteristic('heart_rate_measurement');
+                await characteristic.startNotifications();
+                setTimeout(async () => {
+                    try {
+                        const battService = await server.getPrimaryService('battery_service');
+                        const battChar = await battService.getCharacteristic('battery_level');
+                        const battVal = await battChar.readValue();
+                        buffers.polar_batt = battVal.getUint8(0);
+                    } catch (e) {}
+                }, 1000);
+                characteristic.addEventListener('characteristicvaluechanged', (e) => {
+                    const view = e.target.value;
+                    const flags = view.getUint8(0);
+                    const is16Bit = flags & 1;
+                    buffers.polar_hr = is16Bit ? view.getUint16(1, true) : view.getUint8(1);
+                    if (flags & (1 << 4)) {
+                        let offset = is16Bit ? 3 : 2;
+                        while (offset < view.byteLength) {
+                            const rrMs = (view.getUint16(offset, true) / 1024.0) * 1000.0;
+                            if(rrMs > 300 && rrMs < 1800) buffers.polar_rr.push(rrMs);
+                            offset += 2;
+                        }
+                    }
+                });
+                states.polar = true;
+            } catch (err) { console.error("Polar connect error:", err); }
+        };
+
+        const COLORS = {
+            "ENGAGEMENT": "#ff00ff", "VIGILANCE": "#ff0000", "FLOW": "#00ff00", "DETACHMENT": "#00ccff", "NEUTRAL": "#ffffff"   
+        };
+
+        // --- CHAOS GAME VARIABLES ---
+        let currentAns = "", timeLimit = 5000, problemTimer = null, userScore = 0, fakeAvgScore = 20;
+        const colors = [{name:"RED",hex:"#ff0000"},{name:"BLUE",hex:"#0088ff"},{name:"GREEN",hex:"#00ff00"},{name:"YELLOW",hex:"#ffff00"},{name:"PINK",hex:"#ff00ff"}];
+        const numberWords = ["ZERO","ONE","TWO","THREE","FOUR","FIVE","SIX","SEVEN","EIGHT","NINE"];
+
+        let faaTotalTicks = 0;
+        let faaPosTicks = 0;
+        let fbaTotalTicks = 0;
+        let fbaLogicTicks = 0;
+
+        // --- INITIALIZE DUAL TICKER (BAR + LINE OVERLAY) ---
+        const axCtx = document.getElementById('axTickerChart').getContext('2d');
+        const axChart = new Chart(axCtx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [
+                    { type: 'line', label: 'AXX Score (Composite)', data: [], borderColor: '#ff4444', borderWidth: 2, borderDash: [5, 5], pointRadius: 3, fill: false, order: 1 },
+                    { type: 'bar', label: 'AX Score (Direction)', data: [], backgroundColor: [], borderWidth: 0, order: 2 }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: { x: { display: true, grid: { color: '#222' }, ticks: { color: '#666', maxTicksLimit: 5 } }, y: { display: true, grid: { color: '#222' } } },
+                plugins: { legend: { display: true, labels: {color: '#888', font: {size: 9}} }, title: { display: true, text: 'LIVE ANXIETY TICKER (1-Min Rolling)', color: '#fff', font: {size: 10} } }
+            }
+        });
+
+        // ==========================================
+        // UI EVENT ROUTERS (Replaces ws.onmessage)
+        // ==========================================
+        window.updateDashboardUI = (data) => {
+            if (data.status === "OK" || data.status === "MOTION DETECTED" || data.status === "SYSTEM ACTIVE") {
+                updateGrid(data.x, data.y, data.zone);
+            }
+            updateStatus(data);
+            updateHardware(data); 
+            
+            const motionSpan = document.getElementById('status-motion');
+            if (data.motion_gate) {
+                motionSpan.innerText = "MOTION: DETECTED";
+                motionSpan.className = "status-text status-bad";
+                document.getElementById('dot').style.opacity = "0.3"; 
+            } else {
+                motionSpan.innerText = "MOTION: STABLE";
+                motionSpan.className = "status-text status-good";
+                if (data.status === "SYSTEM ACTIVE") document.getElementById('dot').style.opacity = "1.0"; 
+            }
+
+            const battSpan = document.getElementById('status-batt');
+            if (data.battery !== undefined && data.battery > 0) {
+                battSpan.innerText = `BATT: ${data.battery}%`;
+                battSpan.className = data.battery < 20 ? "status-text status-bad" : "status-text status-good";
+            }
+            
+            if(data.raw_faa !== undefined) {
+                document.getElementById('val-faa').innerText = data.raw_faa.toFixed(4);
+                faaTotalTicks++;
+                if (data.raw_faa > 0) faaPosTicks++;
+                let pctApp = Math.round((faaPosTicks / faaTotalTicks) * 100);
+                document.getElementById('faa-approach').style.width = pctApp + '%';
+                document.getElementById('faa-withdraw').style.width = (100 - pctApp) + '%';
+                document.getElementById('faa-approach-pct').innerText = pctApp + '%';
+                document.getElementById('faa-withdraw-pct').innerText = (100 - pctApp) + '%';
+            }
+
+
+            if(data.L_beta !== undefined && data.R_beta !== undefined) {
+                fbaTotalTicks++;
+                // If Left Beta (Logic) is greater than Right Beta (Stress)
+                if (data.L_beta > data.R_beta) fbaLogicTicks++;
+                
+                let pctLogic = Math.round((fbaLogicTicks / fbaTotalTicks) * 100);
+                document.getElementById('fba-logic').style.width = pctLogic + '%';
+                document.getElementById('fba-stress').style.width = (100 - pctLogic) + '%';
+                document.getElementById('fba-logic-pct').innerText = pctLogic + '%';
+                document.getElementById('fba-stress-pct').innerText = (100 - pctLogic) + '%';
+            }
+
+            if(data.rmssd !== undefined) document.getElementById('val-hrv').innerText = data.rmssd; 
+            if(data.hr !== undefined) document.getElementById('val-hr').innerText = data.hr;
+            
+            if(data.resting_hr !== undefined) {
+                const el = document.getElementById('rest-input');
+                if(document.activeElement !== el) el.placeholder = data.resting_hr;
+            }
+            if(data.faa_offset !== undefined) {
+                const el = document.getElementById('faa-input');
+                if(document.activeElement !== el) el.placeholder = data.faa_offset.toFixed(3);
+            }
+            if(data.ax_offset !== undefined) {
+                const el = document.getElementById('ax-input');
+                if(document.activeElement !== el) el.placeholder = data.ax_offset.toFixed(3);
+            }
+            if(data.axx_offset !== undefined) {
+                const el = document.getElementById('axx-input');
+                if(document.activeElement !== el) el.placeholder = data.axx_offset.toFixed(3);
+            }
+            if(data.null_hrv !== undefined) {
+                const el = document.getElementById('null-hrv-input');
+                if(document.activeElement !== el) el.placeholder = data.null_hrv.toFixed(1);
+            }
+            if(data.null_r_beta !== undefined) {
+                const el = document.getElementById('null-rbeta-input');
+                if(document.activeElement !== el) el.placeholder = data.null_r_beta.toFixed(3);
+            }
+
+            if(data.hr_source) {
+                const sP = document.getElementById('src-polar');
+                const sM = document.getElementById('src-muse');
+                if(data.hr_source === "POLAR") {
+                    sP.className = "src-opt src-active";
+                    sM.className = "src-opt";
+                } else {
+                    sP.className = "src-opt";
+                    sM.className = "src-opt src-active";
+                }
+            }
+        };
+
+        window.handlePythonAlerts = (messages) => {
+            messages.forEach(data => {
+                if (data.type === "AX_TICK") {
+                    const timeStr = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                    axChart.data.labels.push(timeStr);
+                    axChart.data.datasets[0].data.push(data.val_axx);
+                    axChart.data.datasets[1].data.push(data.val_ax);
+                    axChart.data.datasets[1].backgroundColor.push(data.val_ax > 0 ? 'rgba(255, 68, 68, 0.8)' : 'rgba(0, 255, 157, 0.8)');
+                    
+                    if (axChart.data.labels.length > 15) {
+                        axChart.data.labels.shift(); axChart.data.datasets[0].data.shift();
+                        axChart.data.datasets[1].data.shift(); axChart.data.datasets[1].backgroundColor.shift();
+                    }
+                    axChart.update();
+                }
+                else if (data.type === "CALIB_DONE") {
+                    document.getElementById('btn-calib').innerText = "CALIBRATION COMPLETE";
+                    setTimeout(() => document.getElementById('btn-calib').innerText = "AUTO-CALIBRATE (1m)", 2000);
+                }
+                else if (data.type === "PLAY_STIMULUS") playStimulus();
+                else if (data.type === "TEST_COMPLETE") {
+                    speak("Test complete. You may open your eyes.");
+                    alert(`TEST COMPLETE.\nFile Saved: ${data.filename}`);
+                    document.getElementById('btn-unified').innerText = "CLINICAL ASSESSMENT (15m)";
+                    document.getElementById('btn-train').innerText = "DAILY SESSION (12m)";
+                }
+                else if (data.type === "TRAIN_PROMPT" || data.type === "VALENCE_PROMPT") {
+                    document.getElementById('mist-overlay').classList.remove('hidden');
+                    document.getElementById('mist-game').classList.add('hidden');
+                    document.getElementById('valence-game').classList.remove('hidden');
+                    const vis = document.getElementById('calib-visual');
+                    if(data.mode === "CALIB_VISUAL") vis.classList.remove('hidden'); else vis.classList.add('hidden');
+                    document.getElementById('valence-instruction').innerText = data.val; 
+                    document.getElementById('valence-status').innerText = ""; 
+                    speak(data.val);
+                }
+                else if (data.type === "VALENCE_WASHOUT") {
+                    playChime(); speak(data.val);
+                    document.getElementById('valence-instruction').innerText = data.val;
+                    document.getElementById('calib-visual').classList.add('hidden');
+                    setTimeout(() => {
+                        document.getElementById('mist-overlay').classList.add('hidden');
+                        document.getElementById('valence-game').classList.add('hidden');
+                    }, 5000);
+                }
+                else if (data.type === "CHAOS_START_GAME") {
+                    document.getElementById('mist-status').innerText = "";
+                    document.getElementById('mist-game').classList.remove('hidden');
+                    userScore = 0; timeLimit = 5000; nextProblem();
+                }
+                else if (data.type === "CHAOS_STOP_GAME") {
+                    clearInterval(problemTimer);
+                    document.getElementById('mist-game').classList.add('hidden');
+                }
+                else if (data.type === "SAVE_CALIB_DB") {
+                    if (db) {
+                        const tx = db.transaction(["calibrations"], "readwrite");
+                        data.timestamp = new Date().toISOString();
+                        tx.objectStore("calibrations").add(data);
+                        console.log("💾 Calibration saved to IndexedDB empty-mind logs.");
+                    }
+                }
+                else if (data.type === "SAVE_SESSION_DATA") {
+                    pendingSessionData = JSON.parse(data.payload); // Safely parse the pure JSON
+                    isImportingCSV = false; 
+                    document.getElementById('tagging-modal').classList.remove('hidden');
+                    document.getElementById('new-tag-input').focus();
+                }
+            });
+        };
+
+        function toggleGrid() {
+            isGridVisible = !isGridVisible;
+            document.getElementById('grid-container').style.display = isGridVisible ? 'block' : 'none';
+            document.getElementById('zone-display').style.display = isGridVisible ? 'block' : 'none';
+        }
+
+        function updateGrid(x, y, zone) {
+            if(!isGridVisible) return;
+            const px = 250 + (x * 250); const py = 250 - (y * 250); 
+            const dot = document.getElementById('dot');
+            dot.style.left = `${px}px`; dot.style.top = `${py}px`;
+            const color = COLORS[zone] || "#444";
+            dot.style.background = color; dot.style.boxShadow = `0 0 20px ${color}`; dot.style.borderColor = color;
+            const text = document.getElementById('zone-display');
+            text.innerText = zone; text.style.color = color;
+        }
+
+        function updateStatus(data) {
+            const connText = document.getElementById('status-conn');
+            if (data.status === "MOTION DETECTED") {
+                connText.innerText = "EXCESSIVE MOTION";
+                connText.className = "status-text status-warn";
+                document.getElementById('dot').style.opacity = "0.3"; 
+            } else if (data.status !== "SYSTEM ACTIVE" && data.status !== "OK") {
+                connText.innerText = "" + data.status;
+                connText.className = "status-text status-warn";
+                document.getElementById('dot').style.opacity = "0.3"; 
+            } else {
+                connText.innerText = "SYSTEM ACTIVE";
+                connText.className = "status-text";
+                document.getElementById('dot').style.opacity = "1.0";
+            }
+        }
+        
+        function updateHardware(data) {
+            const mBatt = document.getElementById('muse-batt'); const pBatt = document.getElementById('polar-batt');
+            const sig = document.getElementById('sig-status');
+            const battVal = (data.battery && data.battery > 0) ? data.battery : data.muse_batt;
+            mBatt.innerText = (battVal !== undefined && battVal > 0) ? battVal + "%" : "--";
+            pBatt.innerText = (data.polar_batt !== undefined && data.polar_batt > 0) ? data.polar_batt + "%" : "--";
+            sig.innerText = (data.status === "OK" || data.status === "SYSTEM ACTIVE" || data.status === "MOTION DETECTED") ? "OK" : "WAIT";
+            mBatt.className = (battVal && battVal < 20) ? "hw-val batt-low" : "hw-val batt-ok";
+            pBatt.className = (data.polar_batt && data.polar_batt < 20) ? "hw-val batt-low" : "hw-val batt-ok";
+            if (sig.innerText === "OK") sig.className = "hw-val batt-ok"; else sig.className = "hw-val batt-low";
+        }
+
+        function toggleRec() {
+            const recBtn = document.getElementById('btn-rec');
+            if(!isRecording) {
+                window.ws.send(JSON.stringify({cmd: 'START_REC'}));
+                isRecording = true; recBtn.innerText = "REC ON"; recBtn.classList.add('active');
+            } else {
+                window.ws.send(JSON.stringify({cmd: 'STOP_REC'}));
+                isRecording = false; recBtn.innerText = "REC"; recBtn.classList.remove('active');
+            }
+        }
+        
+        function stopAndSave() {
+            window.ws.send(JSON.stringify({cmd:'STOP_REC'}));
+            isRecording = false;
+            const recBtn = document.getElementById('btn-rec');
+            recBtn.innerText = "REC"; recBtn.classList.remove('active');
+        }
+
+        function resetMetrics() {
+            // 1. Reset the internal math counters
+            faaTotalTicks = 0; faaPosTicks = 0;
+            fbaTotalTicks = 0; fbaLogicTicks = 0;
+            
+            // 2. Snap the UI bars back to 50/50
+            document.getElementById('faa-approach').style.width = '50%';
+            document.getElementById('faa-withdraw').style.width = '50%';
+            document.getElementById('faa-approach-pct').innerText = '50%';
+            document.getElementById('faa-withdraw-pct').innerText = '50%';
+            
+            document.getElementById('fba-logic').style.width = '50%';
+            document.getElementById('fba-stress').style.width = '50%';
+            document.getElementById('fba-logic-pct').innerText = '50%';
+            document.getElementById('fba-stress-pct').innerText = '50%';
+
+            // 3. Purge the Anxiety Ticker chart history
+            if (axChart) {
+                axChart.data.labels = [];
+                axChart.data.datasets[0].data = [];
+                axChart.data.datasets[1].data = [];
+                axChart.data.datasets[1].backgroundColor = [];
+                axChart.update();
+            }
+            console.log("♻️ UI Metrics Reset");
+        }
+        
+        function setResting() { window.ws.send(JSON.stringify({cmd:'SET_RESTING_HR', val: document.getElementById('rest-input').value})); document.getElementById('rest-input').value=""; }
+        function setFaa() { window.ws.send(JSON.stringify({cmd:'SET_FAA_OFFSET', val: document.getElementById('faa-input').value})); document.getElementById('faa-input').value=""; }
+        function setAx() { window.ws.send(JSON.stringify({cmd:'SET_AX_OFFSET', val: document.getElementById('ax-input').value})); document.getElementById('ax-input').value=""; }
+        function setAxx() { window.ws.send(JSON.stringify({cmd:'SET_AXX_OFFSET', val: document.getElementById('axx-input').value})); document.getElementById('axx-input').value=""; }
+        function setNullHrv() { window.ws.send(JSON.stringify({cmd:'SET_NULL_HRV', val: document.getElementById('null-hrv-input').value})); document.getElementById('null-hrv-input').value=""; }
+        function setNullRBeta() { window.ws.send(JSON.stringify({cmd:'SET_NULL_R_BETA', val: document.getElementById('null-rbeta-input').value})); document.getElementById('null-rbeta-input').value=""; }
+        function setSource(source) { 
+            window.ws.send(JSON.stringify({cmd:'SET_HR_SOURCE', val:source})); 
+            let weight = (source === 'POLAR') ? 0.70 : 0.30;
+            window.ws.send(JSON.stringify({cmd: 'SET_BRAIN_WEIGHT', val: weight}));
+        }
+        function toggleLock() { window.ws.send(JSON.stringify({cmd:'TOGGLE_HRV_LOCK'})); }
+        function startCalib() { window.ws.send(JSON.stringify({cmd:'START_CALIB'})); document.getElementById('btn-calib').innerText = "CALIBRATING..."; }
+        function startTraining() { window.ws.send(JSON.stringify({cmd: 'START_TRAINING'})); document.getElementById('btn-train').innerText = "TRAINING IN PROGRESS..."; }
+        function startUnified() { window.ws.send(JSON.stringify({cmd: 'START_UNIFIED'})); document.getElementById('btn-unified').innerText = "UNIFIED PROTOCOL RUNNING..."; }
+
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                let voices = window.speechSynthesis.getVoices();
+                if (voices.length === 0) {
+                    window.speechSynthesis.onvoiceschanged = () => { setVoiceAndSpeak(utterance, window.speechSynthesis.getVoices()); };
+                } else { setVoiceAndSpeak(utterance, voices); }
+            }
+        }
+
+        function setVoiceAndSpeak(utterance, voices) {
+            let selectedVoice = voices.find(v => v.name === PREFERRED_VOICE_NAME) || voices.find(v => v.lang.includes('en')) || voices[0];
+            if (selectedVoice) utterance.voice = selectedVoice;
+            utterance.rate = 0.85; window.speechSynthesis.speak(utterance);
+        }
+
+        function playStimulus() {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc1 = audioCtx.createOscillator(); const gain1 = audioCtx.createGain();
+            osc1.type = 'square'; osc1.frequency.value = 800; osc1.connect(gain1); gain1.connect(audioCtx.destination);
+            const osc2 = audioCtx.createOscillator(); const gain2 = audioCtx.createGain();
+            osc2.type = 'sawtooth'; osc2.frequency.value = 1150; osc2.connect(gain2); gain2.connect(audioCtx.destination);
+            const now = audioCtx.currentTime;
+            osc1.start(now); osc2.start(now);
+            gain1.gain.setValueAtTime(0.5, now); gain2.gain.setValueAtTime(0.4, now);
+            gain1.gain.exponentialRampToValueAtTime(0.00001, now + 0.3); gain2.gain.exponentialRampToValueAtTime(0.00001, now + 0.3); 
+            osc1.stop(now + 0.3); osc2.stop(now + 0.3);
+            document.body.style.backgroundColor = "#500"; setTimeout(() => document.body.style.backgroundColor = "#050505", 100);
+        }
+
+        function playChime() {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const notes = [523.25, 659.25, 783.99]; const start = audioCtx.currentTime;
+            notes.forEach((freq, i) => {
+                const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+                osc.type = 'sine'; osc.frequency.value = freq; osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(start + (i * 0.1)); gain.gain.setValueAtTime(0, start + (i*0.1));
+                gain.gain.linearRampToValueAtTime(0.1, start + (i*0.1) + 0.1);
+                gain.gain.exponentialRampToValueAtTime(0.0001, start + 3.0); osc.stop(start + 3.0);
+            });
+        }
+
+        function nextProblem() {
+            const type = Math.floor(Math.random() * 3);
+            const problemEl = document.getElementById('mist-problem'); const instrEl = document.getElementById('instruction-text');
+            const input = document.getElementById('mist-input');
+            problemEl.style.color = "#fff";
+            if (type === 0) { 
+                instrEl.innerText = "SOLVE";
+                const a = Math.floor(Math.random()*15)+5; const b = Math.floor(Math.random()*10)+1; const c = Math.floor(Math.random()*5)+1;
+                currentAns = (a+b-c).toString(); problemEl.innerText = `${a} + ${b} - ${c}`;
+            } else if (type === 1) { 
+                instrEl.innerText = "SOLVE";
+                const a = Math.floor(Math.random()*9); const b = Math.floor(Math.random()*9);
+                currentAns = (a+b).toString(); problemEl.innerText = `${numberWords[a]} + ${numberWords[b]}`;
+            } else { 
+                instrEl.innerText = "TYPE THE COLOR (NOT THE WORD)";
+                const wordIdx = Math.floor(Math.random() * colors.length);
+                let colorIdx = wordIdx; while(colorIdx === wordIdx) { colorIdx = Math.floor(Math.random() * colors.length); }
+                problemEl.innerText = colors[wordIdx].name; problemEl.style.color = colors[colorIdx].hex; currentAns = colors[colorIdx].name; 
+            }
+            input.value = ''; input.focus();
+            clearInterval(problemTimer);
+            const bar = document.getElementById('timer-bar');
+            bar.style.transition = 'none'; bar.style.width = '100%';
+            setTimeout(() => { bar.style.transition = `width ${timeLimit}ms linear`; bar.style.width = '0%'; }, 50);
+            problemTimer = setTimeout(handleFail, timeLimit);
+        }
+
+        function checkEnter(e) { 
+            if(e.key === 'Enter') { 
+                if(e.target.value.toUpperCase().trim() === currentAns) {
+                    userScore+=10; timeLimit = Math.max(1500, timeLimit*0.92); updateBars(); nextProblem();
+                } else handleFail();
+            } 
+        }
+        function handleFail() { userScore = Math.max(0,userScore-5); updateBars(); nextProblem(); }
+        
+        function updateBars() {
+            fakeAvgScore = Math.max(fakeAvgScore, userScore + (userScore*0.15) + Math.random()*10);
+            const max = Math.max(100, fakeAvgScore*1.2);
+            document.getElementById('bar-you').style.width = (userScore/max*100)+"%";
+            document.getElementById('bar-avg').style.width = (fakeAvgScore/max*100)+"%";
+            document.getElementById('score-you').innerText = Math.floor(userScore);
+            document.getElementById('score-avg').innerText = Math.floor(fakeAvgScore);
+        }
+
+        function loadTagsIntoDropdown() {
+            if (!db) return; 
+            const transaction = db.transaction(["tags"], "readonly");
+            const store = transaction.objectStore("tags");
+            const request = store.getAll();
+            request.onsuccess = (event) => {
+                const tags = event.target.result;
+                const sortedTags = tags.sort((a,b) => a.name.localeCompare(b.name));
+                const liveSelect = document.getElementById('tag-select');
+                if (liveSelect) {
+                    liveSelect.innerHTML = '<option value="">-- SELECT A TAG --</option>';
+                    sortedTags.forEach(t => {
+                        const opt = document.createElement('option'); opt.value = t.name; opt.innerText = t.name; liveSelect.appendChild(opt);
+                    });
+                }
+                const importSelect = document.getElementById('import-tag-select');
+                if (importSelect) {
+                    importSelect.innerHTML = '<option value="">-- SELECT A TAG --</option>';
+                    sortedTags.forEach(t => {
+                        const opt = document.createElement('option'); opt.value = t.name; opt.innerText = t.name; importSelect.appendChild(opt);
+                    });
+                }
+            };
+        }
+
+        function getPercentile(arr, percentile) {
+            if (arr.length === 0) return 0;
+            const sorted = arr.slice().sort((a, b) => a - b);
+            const index = Math.floor((percentile / 100) * (sorted.length - 1));
+            return sorted[index];
+        }
+
+        function saveToDatabase() {
+            if (!pendingSessionData || pendingSessionData.length === 0) return;
+            const tagInputId = isImportingCSV ? 'import-new-tag-input' : 'new-tag-input';
+            const tagSelectId = isImportingCSV ? 'import-tag-select' : 'tag-select';
+            const customTag = document.getElementById(tagInputId).value.trim().toUpperCase();
+            const selectedTag = document.getElementById(tagSelectId).value;
+            const finalTag = customTag || selectedTag || "UNTAGGED";
+            const timestamp = new Date().toISOString();
+            
+            let exactDurationSeconds = pendingSessionData.length / 20; 
+            let hr_arr=[], hrv_arr=[], faa_arr=[], ax_arr=[], axx_arr=[], l_beta_arr=[], r_beta_arr=[];
+            let approachTicks = 0; let c = { hr:0, hrv:0, faa:0, ax:0, axx:0, l_beta:0, r_beta:0, validHr:0, validEeg:0 }; 
+            let climateChunks = []; const TICKS_PER_CHUNK = 600; 
+
+            pendingSessionData.forEach((row, index) => {
+                const hr = row.hr; const hrv = row.rmssd !== undefined ? row.rmssd : (row.hrv || 0); 
+                const faa = row.raw_faa !== undefined ? row.raw_faa : (row.valence !== undefined ? row.valence : undefined);
+                const ax = row.live_ax !== undefined ? row.live_ax : (row.raw_ax || 0); 
+                const axx = row.val_axx !== undefined ? row.val_axx : (row.raw_axx !== undefined ? row.raw_axx : (row.live_axx || 0));
+                const lb = row.L_beta || 0; const rb = row.R_beta || 0;
+                
+                const hasHr = hr !== undefined && hr > 0; const hasEeg = faa !== undefined;
+                if (hasHr) { hr_arr.push(hr); hrv_arr.push(hrv); c.hr += hr; c.hrv += hrv; c.validHr++; }
+                if (hasEeg) { 
+                    faa_arr.push(faa); ax_arr.push(ax); axx_arr.push(axx); l_beta_arr.push(lb); r_beta_arr.push(rb); 
+                    c.faa += faa; c.ax += ax; c.axx += axx; c.l_beta += lb; c.r_beta += rb; c.validEeg++; 
+                    if (faa > 0) approachTicks++; 
+                }
+
+                if ((index > 0 && (index + 1) % TICKS_PER_CHUNK === 0) || index === pendingSessionData.length - 1) {
+                    climateChunks.push({
+                        chunk_index: climateChunks.length + 1, avg_hr: c.validHr ? Math.round(c.hr / c.validHr) : 0, avg_hrv: c.validHr ? Math.round(c.hrv / c.validHr) : 0,
+                        avg_faa: c.validEeg ? parseFloat((c.faa / c.validEeg).toFixed(3)) : 0, avg_ax: c.validEeg ? parseFloat((c.ax / c.validEeg).toFixed(3)) : 0,
+                        avg_axx: c.validEeg ? parseFloat((c.axx / c.validEeg).toFixed(3)) : 0, avg_l_beta: c.validEeg ? parseFloat((c.l_beta / c.validEeg).toFixed(3)) : 0,
+                        avg_r_beta: c.validEeg ? parseFloat((c.r_beta / c.validEeg).toFixed(3)) : 0
+                    });
+                    c = { hr:0, hrv:0, faa:0, ax:0, axx:0, l_beta:0, r_beta:0, validHr:0, validEeg:0 };
+                }
+            });
+
+            const overallAverages = {
+                total_duration_seconds: exactDurationSeconds, approach_pct: faa_arr.length ? Math.round((approachTicks / faa_arr.length) * 100) : 0, 
+                avg_hr: hr_arr.length ? Math.round(hr_arr.reduce((a,b)=>a+b,0)/hr_arr.length) : 0, avg_hrv: hrv_arr.length ? Math.round(hrv_arr.reduce((a,b)=>a+b,0)/hrv_arr.length) : 0, 
+                min_hrv: Math.round(getPercentile(hrv_arr, 5)), max_hrv: Math.round(getPercentile(hrv_arr, 95)), 
+                avg_faa: faa_arr.length ? parseFloat((faa_arr.reduce((a,b)=>a+b,0)/faa_arr.length).toFixed(3)) : 0, avg_ax: ax_arr.length ? parseFloat((ax_arr.reduce((a,b)=>a+b,0)/ax_arr.length).toFixed(3)) : 0, 
+                avg_axx: axx_arr.length ? parseFloat((axx_arr.reduce((a,b)=>a+b,0)/axx_arr.length).toFixed(3)) : 0, avg_l_beta: l_beta_arr.length ? parseFloat((l_beta_arr.reduce((a,b)=>a+b,0)/l_beta_arr.length).toFixed(3)) : 0, 
+                avg_r_beta: r_beta_arr.length ? parseFloat((r_beta_arr.reduce((a,b)=>a+b,0)/r_beta_arr.length).toFixed(3)) : 0 
+            };
+
+            if (!db) {
+                const safeTag = finalTag.replace(/\s+/g, '_');
+                downloadCSV(pendingSessionData, `neurovis_${sessionId}_${safeTag}.csv`);
+                document.getElementById('tagging-modal').classList.add('hidden');
+                document.getElementById('import-modal').classList.add('hidden');
+                pendingSessionData = null; return;
+            }
+            
+            // Trigger download synchronously so the browser doesn't block it
+            if (!isImportingCSV) {
+                const safeTag = finalTag.replace(/\s+/g, '_');
+                downloadCSV(pendingSessionData, `neurovis_${sessionId}_${safeTag}.csv`);
+            }
+            
+            const transaction = db.transaction(["sessions", "climate_chunks", "raw_data", "tags"], "readwrite");
+            if (customTag) transaction.objectStore("tags").put({ name: customTag });
+            
+            // Use .put() to prevent silent crashes if saving multiple sessions on one page load
+            transaction.objectStore("sessions").put({ session_id: sessionId, timestamp: timestamp, tag: finalTag, summary: overallAverages });
+            transaction.objectStore("climate_chunks").put({ session_id: sessionId, chunks: climateChunks });
+            transaction.objectStore("raw_data").put({ session_id: sessionId, raw_tick_data: pendingSessionData });
+
+            transaction.oncomplete = () => {
+                if (isImportingCSV) {
+                    document.getElementById('import-modal').classList.add('hidden'); alert("✅ Historical Session Imported and Chunked!");
+                } else {
+                    document.getElementById('tagging-modal').classList.add('hidden'); alert("✅ Session saved to database and downloaded as CSV!");
+                }
+                document.getElementById(tagInputId).value = ""; document.getElementById(tagSelectId).value = "";
+                pendingSessionData = null; loadTagsIntoDropdown(); 
+            };
+        }
+    
+
+        function handleCSVImport(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result; const rows = text.trim().split('\n');
+                if (rows.length < 2) return alert("CSV appears empty.");
+                const headers = rows[0].split(',').map(h => h.trim());
+                let parsedData = [];
+                for (let i = 1; i < rows.length; i++) {
+                    const cols = rows[i].split(','); let rowObj = {};
+                    headers.forEach((header, index) => {
+                        const val = cols[index] ? cols[index].trim() : null;
+                        rowObj[header] = isNaN(val) || val === '' ? val : Number(val);
+                    });
+                    parsedData.push(rowObj);
+                }
+                pendingSessionData = parsedData; isImportingCSV = true;
+                document.getElementById('import-modal').classList.remove('hidden');
+                document.getElementById('csv-import-input').value = "";
+            };
+            reader.readAsText(file);
+        }
+        window.handleCSVImport = handleCSVImport;
+
+        function downloadCSV(data, filename) {
+            if (!data || !data.length) return;
+            const headers = Object.keys(data[0]).join(',');
+            const rows = data.map(row => {
+                return Object.values(row).map(val => { let str = String(val); return str.includes(',') ? `"${str}"` : str; }).join(',');
+            });
+            const blob = new Blob([headers + "\n" + rows.join("\n")], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob); link.download = filename; link.style.visibility = 'hidden';
+            document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        }
+
+        window.toggleGrid = toggleGrid;
+        window.toggleRec = toggleRec;
+        window.stopAndSave = stopAndSave;
+        window.setResting = setResting;
+        window.setFaa = setFaa;
+        window.setAx = setAx;
+        window.setAxx = setAxx;
+        window.setNullHrv = setNullHrv;
+        window.setNullRBeta = setNullRBeta;
+        window.setSource = setSource;
+        window.toggleLock = toggleLock;
+        window.startCalib = startCalib;
+        window.startTraining = startTraining;
+        window.startUnified = startUnified;
+        window.checkEnter = checkEnter;
+        window.saveToDatabase = saveToDatabase;
+        window.resetMetrics = resetMetrics;
+
+    </script>
+</body>
+</html>

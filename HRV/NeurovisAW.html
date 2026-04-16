@@ -1,0 +1,1611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Neurovis HRV</title>
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    <style>
+        /* Apple-inspired Typography and Ambient Background */
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            padding: 20px 30px; 
+            margin: 0;
+            background: linear-gradient(135deg, #e0eafc 0%, #cfdef3 100%); 
+            background-attachment: fixed;
+            color: #1d1d1f; 
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container { max-width: 1400px; margin: 0 auto; display: flex; gap: 24px; align-items: flex-start; }
+        .main-col { flex: 3; min-width: 0; }
+        .side-col { flex: 1; min-width: 340px; display: none; }
+
+        /* --- GLASSMORPHISM BASE CLASS --- */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.65);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.05);
+            border-radius: 18px;
+        }
+
+        /* Header & Controls */
+        .header { 
+            padding: 20px 30px; 
+            margin-bottom: 24px; 
+            display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; 
+        }
+        .header-left { display: flex; align-items: baseline; gap: 15px; }
+        .header h2 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.5px; }
+        
+        .btn-upload { 
+            background: rgba(0, 122, 255, 0.85); 
+            backdrop-filter: blur(4px);
+            color: white; 
+            padding: 8px 16px; 
+            border-radius: 20px; 
+            cursor: pointer; 
+            font-weight: 500; font-size: 13px; 
+            border: 1px solid rgba(255,255,255,0.2); 
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.2);
+            display: inline-flex; align-items: center; justify-content: center;
+        }
+        .btn-upload:hover { background: rgba(0, 122, 255, 1); transform: translateY(-1px); }
+        .btn-secondary { background: rgba(142, 142, 147, 0.85); box-shadow: 0 4px 12px rgba(142, 142, 147, 0.2); }
+        .btn-secondary:hover { background: rgba(142, 142, 147, 1); }
+        .btn-success { background: rgba(52, 199, 89, 0.85); box-shadow: 0 4px 12px rgba(52, 199, 89, 0.2); }
+        .btn-success:hover { background: rgba(52, 199, 89, 1); }
+        
+        input[type="file"] { display: none; }
+        
+        .toggle-group { display: flex; gap: 15px; align-items: center; background: rgba(255,255,255,0.4); padding: 6px 14px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.5); }
+        .toggle-container { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: #555; }
+        .toggle-container input[type="checkbox"] { accent-color: #007aff; cursor: pointer; }
+        
+        /* KPI Grid */
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .kpi-card { padding: 18px 20px; position: relative; overflow: hidden; }
+        .kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; }
+        .kpi-total::before { background: #5856d6; } .kpi-avg::before { background: #007aff; } .kpi-morning::before { background: #5ac8fa; } .kpi-workout::before { background: #af52de; } .kpi-7day::before { background: #ffcc00; }
+        .kpi-card h3 { margin: 0; font-size: 11px; color: #86868b; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; display: flex; align-items: center; }
+        .kpi-card .value { font-size: 22px; font-weight: 700; margin-top: 8px; letter-spacing: -0.5px; }
+
+        /* Custom Tooltip Styling */
+        .info-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: rgba(0, 0, 0, 0.08); color: #555; font-size: 10px; font-weight: 700; margin-left: 6px; cursor: help; transition: all 0.2s ease; }
+        .info-icon:hover { background: rgba(0, 122, 255, 0.15); color: #007aff; }
+        .glass-tooltip-box { position: fixed; z-index: 9999; pointer-events: none; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.8); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); color: #1d1d1f; padding: 10px 14px; border-radius: 10px; font-size: 13px; font-weight: 500; line-height: 1.4; max-width: 250px; opacity: 0; transition: opacity 0.15s ease; }
+        .glass-tooltip-box.visible { opacity: 1; }
+
+        /* Modal / Survey Styles */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.4); z-index: 10000; display: none; justify-content: center; align-items: center; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); padding: 20px;}
+        .modal-content { width: 100%; max-width: 700px; max-height: 90vh; overflow-y: auto; padding: 35px; background: rgba(255, 255, 255, 0.85); }
+        .modal-content h2 { margin: 0 0 10px 0; font-size: 24px; letter-spacing: -0.5px;}
+        .modal-content p { font-size: 14px; color: #555; margin-bottom: 25px; line-height: 1.5; }
+        .form-section { margin-bottom: 25px; padding-bottom: 20px; border-bottom: 1px solid rgba(0,0,0,0.05); }
+        .form-section:last-child { border-bottom: none; }
+        .form-section h4 { margin: 0 0 15px 0; font-size: 15px; color: #007aff; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .form-group { margin-bottom: 15px; }
+        .form-group.full-width { grid-column: span 2; }
+        .form-group label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; color: #1d1d1f; }
+        .form-group select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(0,0,0,0.1); background: rgba(255,255,255,0.7); font-size: 14px; font-family: inherit; color: #1d1d1f; outline: none; transition: border-color 0.2s;}
+        .form-group select:focus { border-color: #007aff; background: #fff; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 15px; margin-top: 10px; }
+
+        /* Charts */
+        .chart-box { padding: 24px; margin-bottom: 24px; overflow: hidden; }
+        .chart-box h3 { margin: 0 0 8px 0; font-size: 18px; font-weight: 600; letter-spacing: -0.3px; display: flex; align-items: center; }
+        .chart-box p { color: #86868b; font-size: 13px; margin-bottom: 15px; line-height: 1.4; }
+        .chart-box strong { color: #1d1d1f; }
+        
+        #zoom-indicator { display: none; font-size: 11px; color: #007aff; background: rgba(0, 122, 255, 0.1); padding: 4px 12px; border-radius: 12px; font-weight: 600; margin-left: 10px; border: 1px solid rgba(0, 122, 255, 0.2); vertical-align: middle; }
+
+        /* The X-Ray Panel */
+        .xray-panel { position: sticky; top: 20px; max-height: calc(100vh - 40px); display: flex; flex-direction: column; overflow: hidden; }
+        .xray-header { background: rgba(255,255,255,0.4); padding: 20px; border-bottom: 1px solid rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: flex-start; }
+        .xray-header h3 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing:-0.3px;}
+        .xray-header .date { font-size: 13px; color: #86868b; margin-top: 4px; font-weight: 500; }
+        .close-btn { background: rgba(0,0,0,0.05); border: none; font-size: 18px; width:28px; height:28px; border-radius:14px; color: #555; cursor: pointer; display:flex; align-items:center; justify-content:center; transition: background 0.2s; }
+        .close-btn:hover { background: rgba(0,0,0,0.1); color: #000; }
+        .xray-content { padding: 0; overflow-y: auto; flex: 1; }
+        
+        /* Sample List */
+        .sample-row { padding: 12px 20px; border-bottom: 1px solid rgba(0,0,0,0.03); display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+        .sample-row:last-child { border-bottom: none; }
+        .sample-row.dirty { background-color: rgba(255, 59, 48, 0.05); color: #86868b; }
+        .sample-row.clean { background-color: transparent; }
+        .sample-row.sleep-light { background: linear-gradient(90deg, rgba(90, 200, 250, 0.05), transparent); }
+        .sample-row.sleep-deep { background: linear-gradient(90deg, rgba(0, 122, 255, 0.08), transparent); font-weight: 500;}
+        
+        .badge { padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; margin-left: 6px; letter-spacing: 0.5px;}
+        .badge-clean { background: rgba(52, 199, 89, 0.15); color: #248a3d; }
+        .badge-dirty { background: rgba(255, 59, 48, 0.1); color: #d93025; }
+        .badge-work { background: rgba(175, 82, 222, 0.15); color: #8432a8; }
+        .badge-sleep { background: rgba(90, 200, 250, 0.15); color: #007aff; }
+        .badge-deep { background: rgba(0, 122, 255, 0.15); color: #005bb5; }
+
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 20px; background: rgba(255,255,255,0.2); border-bottom: 1px solid rgba(0,0,0,0.05); }
+        .stat-item { text-align: center; }
+        .stat-label { font-size: 11px; color: #86868b; text-transform: uppercase; font-weight:600; letter-spacing:0.5px; }
+        .stat-val { font-size: 20px; font-weight: 700; color: #1d1d1f; margin-top:4px;}
+        
+        .workout-breakdown { background: rgba(175, 82, 222, 0.05); padding: 20px; border-bottom: 1px solid rgba(175, 82, 222, 0.1); display: none; }
+        .workout-breakdown h4 { margin: 0 0 12px 0; color: #af52de; font-size: 14px; display:flex; justify-content:space-between; font-weight:600;}
+        .workout-metric { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; color:#555;}
+        .workout-metric strong { color: #1d1d1f; font-weight:600; }
+        .confidence-warning { background: rgba(255, 204, 0, 0.15); color: #b76e00; padding: 12px; font-size: 12px; text-align: center; font-weight:500;}
+    </style>
+</head>
+<body>
+
+<div id="global-tooltip" class="glass-tooltip-box"></div>
+
+<div id="surveyModal" class="modal-overlay">
+    <div class="modal-content glass-panel">
+        <h2>Anonymous Baseline Profile</h2>
+        <p>This demographic and lifestyle data is kept strictly local on your device until you choose to export it. It helps contextualize the mathematical trends in your HRV data.</p>
+        
+        <div class="form-section">
+            <h4>Demographics & Age</h4>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Age Bracket</label>
+                    <select id="svy_age">
+                        <option value="">Select...</option>
+                        <option>18-24</option><option>25-34</option><option>35-44</option>
+                        <option>45-54</option><option>55-64</option><option>65+</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Biological Sex</label>
+                    <select id="svy_sex">
+                        <option value="">Select...</option>
+                        <option>Male</option><option>Female</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h4>Nutrition & Lifestyle</h4>
+            <div class="form-grid">
+                <div class="form-group full-width">
+                    <label>Primary Dietary Protocol</label>
+                    <select id="svy_diet">
+                        <option value="">Select...</option>
+                        <option>Standard / Omnivore</option>
+                        <option>Vegetarian / Plant-Based</option>
+                        <option>Vegan</option>
+                        <option>Ketogenic / Very-Low-Carb</option>
+                        <option>Paleo</option>
+                        <option>Mediterranean</option>
+                        <option>I eat whatever I want whenever I want</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Alcohol Consumption</label>
+                    <select id="svy_alcohol">
+                        <option value="">Select...</option>
+                        <option>None</option>
+                        <option>1-2 drinks/week</option>
+                        <option>3-5 drinks/week</option>
+                        <option>6+ drinks/week</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Cannabis Consumption</label>
+                    <select id="svy_cannabis">
+                        <option value="">Select...</option>
+                        <option>None</option>
+                        <option>1-2 times/week</option>
+                        <option>3-5 times/week</option>
+                        <option>6+ times/week</option>
+                    </select>
+                </div>
+                <div class="form-group full-width">
+                    <label>Caffeine Cutoff</label>
+                    <select id="svy_caffeine">
+                        <option value="">Select...</option>
+                        <option>I stop caffeine before noon</option>
+                        <option>I consume caffeine in the afternoon/evening</option>
+                        <option>I do not consume caffeine</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h4>Training & Sleep</h4>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Primary Training Modality</label>
+                    <select id="svy_training_type">
+                        <option value="">Select...</option>
+                        <option>Endurance (Run/Cycle/Swim)</option>
+                        <option>Resistance (Weightlifting)</option>
+                        <option>Mixed (Crossfit/HIIT)</option>
+                        <option>Sedentary</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Training Frequency</label>
+                    <select id="svy_training_freq">
+                        <option value="">Select...</option>
+                        <option>0 days</option><option>1-2 days</option>
+                        <option>3-4 days</option><option>5+ days</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Sleep Consistency</label>
+                    <select id="svy_sleep_consist">
+                        <option value="">Select...</option>
+                        <option>Wake up exact same time every day</option>
+                        <option>Wake times vary by >1 hour on off days</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Perceived Sleep Quality</label>
+                    <select id="svy_sleep_qual">
+                        <option value="">Select...</option>
+                        <option>1 (Terrible)</option><option>2</option><option>3</option>
+                        <option>4</option><option>5 (Excellent)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-section">
+            <h4>Mental Health Screeners (Past 2 Weeks)</h4>
+            <div class="form-grid">
+                <div class="form-group full-width">
+                    <label>Anxiety: Feeling nervous, anxious, or on edge?</label>
+                    <select id="svy_anx_1">
+                        <option value="">Select...</option>
+                        <option>Not at all</option><option>Several days</option>
+                        <option>More than half the days</option><option>Nearly every day</option>
+                    </select>
+                </div>
+                <div class="form-group full-width">
+                    <label>Anxiety: Not being able to stop or control worrying?</label>
+                    <select id="svy_anx_2">
+                        <option value="">Select...</option>
+                        <option>Not at all</option><option>Several days</option>
+                        <option>More than half the days</option><option>Nearly every day</option>
+                    </select>
+                </div>
+                <div class="form-group full-width">
+                    <label>Depression: Little interest or pleasure in doing things?</label>
+                    <select id="svy_dep_1">
+                        <option value="">Select...</option>
+                        <option>Not at all</option><option>Several days</option>
+                        <option>More than half the days</option><option>Nearly every day</option>
+                    </select>
+                </div>
+                <div class="form-group full-width">
+                    <label>Depression: Feeling down, depressed, or hopeless?</label>
+                    <select id="svy_dep_2">
+                        <option value="">Select...</option>
+                        <option>Not at all</option><option>Several days</option>
+                        <option>More than half the days</option><option>Nearly every day</option>
+                    </select>
+                </div>
+                <div class="form-group full-width">
+                    <label>Do you have a High Stress Occupation? (e.g., First responder, executive)</label>
+                    <select id="svy_stress_occ">
+                        <option value="">Select...</option>
+                        <option>Yes</option><option>No</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-actions">
+            <button class="btn-upload btn-secondary" onclick="closeSurvey()">Cancel</button>
+            <button class="btn-upload btn-success" onclick="saveSurvey()">Save Profile</button>
+        </div>
+    </div>
+</div>
+
+<div class="header glass-panel">
+    <div class="header-left">
+        <h2>Neurovis HRV (alpha v0.11)</h2>
+        <span style="font-size:13px; color:#86868b; margin-left:10px;" id="file-status">Initializing Engine...</span>
+        <span id="zoom-indicator">Zoom Active</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap: wrap; justify-content: flex-end;">
+        <div class="toggle-group">
+            <div class="toggle-container">
+                <input type="checkbox" id="toggleSleepOnly" onchange="renderDashboard()">
+                <label for="toggleSleepOnly">Sleep HRV</label>
+            </div>
+            <div class="toggle-container">
+                <input type="checkbox" id="toggleDeepSleepOnly" onchange="renderDashboard()">
+                <label for="toggleDeepSleepOnly">Deep Sleep</label>
+            </div>
+        </div>
+        
+        <button class="btn-upload btn-secondary" onclick="openSurvey()">Profile</button>
+        <button class="btn-upload btn-secondary" onclick="exportFullDB()">Export Data</button>
+        
+        <button id="btn-upload-server" class="btn-upload btn-secondary" onclick="uploadToNeurovis()" style="display: none;">Upload to Neurovis</button>
+        
+        <label class="btn-upload btn-secondary">Import Data <input type="file" id="importInput" accept=".json" onchange="importFullDB(event)"></label>
+        
+        <button class="btn-upload btn-secondary" onclick="resetZoom()">Reset Zoom</button>
+        <label class="btn-upload" id="uploadBtnText">Upload Zip <input type="file" id="fileInput" accept=".zip" onchange="handleZipUpload(event)"></label>
+    </div>
+</div>
+
+<div class="kpi-grid">
+    <div class="kpi-card kpi-total glass-panel">
+        <h3>Total Days <span class="info-icon" data-tooltip="Total number of valid days successfully analyzed from your Apple Health export.">?</span></h3>
+        <div class="value" id="kpi-total">-</div>
+    </div>
+    <div class="kpi-card kpi-avg glass-panel">
+        <h3>Avg HRV <span class="info-icon" data-tooltip="Your overall baseline Heart Rate Variability. Higher is generally better and indicates an adaptable nervous system.">?</span></h3>
+        <div class="value" id="kpi-avg">-</div>
+    </div>
+    <div class="kpi-card kpi-morning glass-panel">
+        <h3>Morning Ready <span class="info-icon" data-tooltip="The average of your very first non-moving HRV reading after waking up. This is the truest indicator of daily readiness.">?</span></h3>
+        <div class="value" id="kpi-morning-avg">-</div>
+    </div>
+    <div class="kpi-card kpi-workout glass-panel">
+        <h3>Avg Time Asleep <span class="info-icon" data-tooltip="Your average total sleep duration per night across all recorded data.">?</span></h3>
+        <div class="value" id="kpi-avg-sleep">-</div>
+    </div>
+    <div class="kpi-card kpi-workout glass-panel">
+        <h3>Workouts / Wk <span class="info-icon" data-tooltip="The average number of workouts you log per week.">?</span></h3>
+        <div class="value" id="kpi-wk-workouts">-</div>
+    </div>
+    <div class="kpi-card kpi-workout glass-panel">
+        <h3>Workout Min / Wk <span class="info-icon" data-tooltip="The average total minutes you spend exercising per week.">?</span></h3>
+        <div class="value" id="kpi-wk-workout-min">-</div>
+    </div>
+    <div class="kpi-card kpi-7day glass-panel">
+        <h3>7D Sleep Change <span class="info-icon" data-tooltip="How your average sleep duration over the last 7 days compares to your all-time baseline.">?</span></h3>
+        <div class="value" id="kpi-7d-sleep">-</div>
+    </div>
+    <div class="kpi-card kpi-7day glass-panel">
+        <h3>7D HRV Change <span class="info-icon" data-tooltip="How your HRV over the last 7 days compares to your all-time baseline. Positive numbers mean increasing recovery.">?</span></h3>
+        <div class="value" id="kpi-7d-hrv">-</div>
+    </div>
+    <div class="kpi-card kpi-7day glass-panel">
+        <h3>7D Workouts <span class="info-icon" data-tooltip="Total number of workouts recorded in the last 7 days.">?</span></h3>
+        <div class="value" id="kpi-7d-workouts-count">-</div>
+    </div>
+    <div class="kpi-card kpi-7day glass-panel">
+        <h3>7D Min/Workout <span class="info-icon" data-tooltip="The average length of your workouts over the last 7 days.">?</span></h3>
+        <div class="value" id="kpi-7d-workout-min">-</div>
+    </div>
+</div>
+
+<div class="container">
+    <div class="main-col">
+        
+        <div class="chart-box glass-panel">
+            <h3>Timeline Overview <span class="info-icon" data-tooltip="The Timeline maps your daily HRV against your baseline. Green zones indicate you are primed to perform, yellow indicates systemic strain. Click any workout dot to see a heart rate breakdown.">?</span></h3>
+            <p>
+                <strong>Green:</strong> Performance | <strong>Yellow:</strong> Strained
+                <br><strong>Purple Dots:</strong> Workout Recorded (Click for Breakdown)
+            </p>
+            <div id="chart-candle" style="height: 500px;"></div>
+        </div>
+
+        <div class="chart-box glass-panel">
+            <h3>Z-Score Variance Breakdown <span class="info-icon" data-tooltip="This chart aggregates your HRV variance by day of the week to reveal structural patterns in your weekly strain or recovery cycles. Do you always crash on Thursdays? Find out here.">?</span></h3>
+            <div id="chart-weekly-calc" style="height: 350px;"></div>
+        </div>
+
+        <div class="chart-box glass-panel">
+            <h3>Morning Readiness HRV <span class="info-icon" data-tooltip="Morning Readiness isolates your baseline recovery. A stable or rising trend here indicates your nervous system is adapting well to training.">?</span></h3>
+            <p>First non-moving HRV reading after waking. The truest baseline for daily recovery.</p>
+            <div id="chart-morning" style="height: 350px;"></div>
+        </div>
+
+        <div class="chart-box glass-panel">
+            <h3>Sleep Architecture <span class="info-icon" data-tooltip="Breaks down your time in Deep, Core, and REM sleep. Deep sleep is crucial for physical recovery, while REM is crucial for cognitive recovery.">?</span></h3>
+            <div id="chart-sleep-stages" style="height: 350px;"></div>
+        </div>
+
+        
+    </div>
+
+    <div class="side-col" id="sidePanel">
+        <div class="xray-panel glass-panel">
+            <div class="xray-header">
+                <div>
+                    <h3 id="panel-title">Data X-Ray</h3>
+                    <div class="date" id="panel-date">-</div>
+                </div>
+                <button class="close-btn" onclick="clearHighlights()">&times;</button>
+            </div>
+            
+            <div id="panel-workout-details" class="workout-breakdown">
+                <h4><span>Workout HR Breakdown</span> ⏱️</h4>
+                <div class="workout-metric"><span>Total Duration:</span> <strong id="wo-duration">-</strong></div>
+                <div class="workout-metric"><span>Recovery (<100bpm):</span> <strong id="wo-recovery">-</strong></div>
+                
+                <div style="margin-top: 15px; font-size:12px; font-weight:600; color:#555;">Heart Rate Zones (Minutes)</div>
+                <div class="zone-bar-container" style="display:flex; height:22px; border-radius:11px; overflow:hidden; margin-top:6px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);">
+                    <div id="zb-z1" style="background:#5ac8fa; width:0%; display:flex; align-items:center; justify-content:center; color:white; font-size:10px; font-weight:bold;" title="<120 BPM"></div>
+                    <div id="zb-z2" style="background:#34c759; width:0%; display:flex; align-items:center; justify-content:center; color:white; font-size:10px; font-weight:bold;" title="120-140 BPM"></div>
+                    <div id="zb-z3" style="background:#ffcc00; width:0%; display:flex; align-items:center; justify-content:center; color:white; font-size:10px; font-weight:bold;" title="140-160 BPM"></div>
+                    <div id="zb-z4" style="background:#ff3b30; width:0%; display:flex; align-items:center; justify-content:center; color:white; font-size:10px; font-weight:bold;" title=">160 BPM"></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; font-size:10px; color:#86868b; margin-top:6px; font-weight:500;">
+                    <span><120</span>
+                    <span>120-140</span>
+                    <span>140-160</span>
+                    <span style="color:#ff3b30;">>160</span>
+                </div>
+                <div id="wo-high-alert" style="background:rgba(255, 59, 48, 0.1); color:#d93025; border-radius:8px; padding:10px; font-size:11px; font-weight:600; margin-top:12px; display:none; text-align:center;">
+                    ⚠️ HR > 160 BPM for <span id="wo-high-hr-flag"></span> mins
+                </div>
+            </div>
+
+            <div id="panel-warning" class="confidence-warning" style="display:none;">
+                Warning: Low Confidence (Only <span id="warn-count">0</span> samples)
+            </div>
+
+            <div class="stat-grid">
+                <div class="stat-item">
+                    <div class="stat-label">Daily Median <span class="info-icon" data-tooltip="The absolute middle HRV reading from this specific day.">?</span></div>
+                    <div class="stat-val" id="panel-median">-</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Samples <span class="info-icon" data-tooltip="The total number of clean HRV samples processed for this specific day.">?</span></div>
+                    <div class="stat-val" id="panel-samples">-</div>
+                </div>
+            </div>
+
+            <div class="xray-content" id="panel-list"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- CUSTOM TOOLTIP ENGINE ---
+    document.addEventListener('DOMContentLoaded', () => {
+        const tooltip = document.getElementById('global-tooltip');
+
+        document.body.addEventListener('mouseover', (e) => {
+            const target = e.target.closest('[data-tooltip]');
+            if (target) {
+                tooltip.innerHTML = target.getAttribute('data-tooltip');
+                tooltip.classList.add('visible');
+            }
+        });
+
+        document.body.addEventListener('mousemove', (e) => {
+            if (tooltip.classList.contains('visible')) {
+                let x = e.clientX + 15;
+                let y = e.clientY + 15;
+                if (x + tooltip.offsetWidth > window.innerWidth) x = e.clientX - tooltip.offsetWidth - 10;
+                if (y + tooltip.offsetHeight > window.innerHeight) y = e.clientY - tooltip.offsetHeight - 10;
+                tooltip.style.left = x + 'px';
+                tooltip.style.top = y + 'px';
+            }
+        });
+
+        document.body.addEventListener('mouseout', (e) => {
+            const target = e.target.closest('[data-tooltip]');
+            if (target) tooltip.classList.remove('visible');
+        });
+    });
+
+    // --- GLOBAL PLOTLY CONFIG ---
+    const transparentLayout = {
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        font: { family: '-apple-system, sans-serif', color: '#1d1d1f' },
+        margin: { t: 20, b: 40, l: 40, r: 20 }
+    };
+
+    let rawData = [];
+    let workoutData = [];
+    let currentDailyStats = [];
+    let mainTraces = [];
+    let globalUpper = null; 
+    let globalLower = null; 
+    let globalDailySummary = {}; 
+
+    const baseShapesMap = {
+        'chart-morning': [], 'chart-candle': [], 'chart-sleep-stages': []
+    };
+
+    function resetZoom() { renderDashboard(); }
+
+    function updateAnalysis(statsSubset) {
+        const totalDays = statsSubset.length;
+        if (totalDays === 0) return;
+
+        const medians = statsSubset.map(d => d.median);
+        const avgHRV = medians.reduce((a, b) => a + b, 0) / totalDays;
+        
+        let sumSleep = 0, daysSleep = 0;
+        let sumWorkoutsCount = 0, sumWorkoutMin = 0;
+        
+        statsSubset.forEach(d => {
+            const sumData = globalDailySummary[d.date];
+            if(sumData) {
+                if(sumData.sleepMin > 0) { sumSleep += sumData.sleepMin; daysSleep++; }
+                sumWorkoutsCount += sumData.workoutsCount;
+                sumWorkoutMin += sumData.workoutMin;
+            }
+        });
+
+        const avgSleepMin = daysSleep > 0 ? sumSleep / daysSleep : 0;
+        const wks = totalDays / 7;
+        const avgWkWorkouts = wks > 0 ? sumWorkoutsCount / wks : 0;
+        const avgWkWorkoutMin = wks > 0 ? sumWorkoutMin / wks : 0;
+
+        // 7 Day metrics
+        const last7 = statsSubset.slice(-7);
+        let l7SumSleep = 0, l7DaysSleep = 0;
+        let l7SumWorkouts = 0, l7SumWorkoutMin = 0;
+        let l7SumHRV = 0;
+
+        last7.forEach(d => {
+            l7SumHRV += d.median;
+            const sumData = globalDailySummary[d.date];
+            if(sumData) {
+                if(sumData.sleepMin > 0) { l7SumSleep += sumData.sleepMin; l7DaysSleep++; }
+                l7SumWorkouts += sumData.workoutsCount;
+                l7SumWorkoutMin += sumData.workoutMin;
+            }
+        });
+
+        const l7AvgSleep = l7DaysSleep > 0 ? l7SumSleep / l7DaysSleep : 0;
+        const l7AvgHRV = last7.length > 0 ? l7SumHRV / last7.length : 0;
+        const l7AvgMinPerWorkout = l7SumWorkouts > 0 ? l7SumWorkoutMin / l7SumWorkouts : 0;
+
+        const sleepChangePct = avgSleepMin > 0 ? ((l7AvgSleep - avgSleepMin) / avgSleepMin) * 100 : 0;
+        const hrvChangePct = avgHRV > 0 ? ((l7AvgHRV - avgHRV) / avgHRV) * 100 : 0;
+
+        const fmtPct = (val) => (val > 0 ? "+" : "") + val.toFixed(1) + "%";
+        const fmtHrs = (mins) => { const h = Math.floor(mins/60); const m = Math.round(mins%60); return h>0 ? `${h}h ${m}m` : `${m}m`; };
+
+        document.getElementById('kpi-total').innerText = totalDays;
+        document.getElementById('kpi-avg').innerText = Math.round(avgHRV) + " ms";
+        
+        document.getElementById('kpi-avg-sleep').innerText = fmtHrs(avgSleepMin);
+        document.getElementById('kpi-wk-workouts').innerText = avgWkWorkouts.toFixed(1);
+        document.getElementById('kpi-wk-workout-min').innerText = fmtHrs(avgWkWorkoutMin);
+        
+        document.getElementById('kpi-7d-sleep').innerText = fmtPct(sleepChangePct);
+        document.getElementById('kpi-7d-hrv').innerText = fmtPct(hrvChangePct);
+        document.getElementById('kpi-7d-workouts-count').innerText = l7SumWorkouts;
+        document.getElementById('kpi-7d-workout-min').innerText = Math.round(l7AvgMinPerWorkout) + " m";
+
+        const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        let dayHRVSums = [0,0,0,0,0,0,0];
+        let dayHRVCounts = [0,0,0,0,0,0,0];
+
+        if (globalUpper !== null) {
+            let zGreen = [0,0,0,0,0,0,0];
+            let zYellow = [0,0,0,0,0,0,0];
+
+            statsSubset.forEach(d => {
+                const dateObj = new Date(d.date + "T00:00:00");
+                let dayIdx = dateObj.getDay(); 
+                let plotIdx = dayIdx === 0 ? 6 : dayIdx - 1;
+                
+                dayHRVSums[plotIdx] += d.median;
+                dayHRVCounts[plotIdx]++;
+
+                if (d.zCategory === 'Green') zGreen[plotIdx]++;
+                else zYellow[plotIdx]++; 
+            });
+            const totalsZ = zGreen.map((g, i) => g + zYellow[i]);
+            
+            const dayAvgLabels = dayHRVSums.map((sum, i) => {
+                return dayHRVCounts[i] > 0 ? Math.round(sum / dayHRVCounts[i]) + "ms" : "";
+            });
+
+            const traceAvgTextZ = {
+                x: weekdays, y: totalsZ.map(t => t * 1.05),
+                text: dayAvgLabels, mode: 'text', type: 'scatter',
+                textposition: 'top center', textfont: { color: '#ff3b30', size: 13, weight: '600' },
+                hoverinfo: 'none', showlegend: false
+            };
+
+            function getPctWeek(val, total) { return total > 0 ? Math.round((val/total)*100) + "%" : ""; }
+
+            const trZGreen = { x: weekdays, y: zGreen, name: 'Performance', type: 'bar', marker: { color: '#34c759' }, text: zGreen.map((v, i) => getPctWeek(v, totalsZ[i])), textposition: 'auto' };
+            const trZYellow = { x: weekdays, y: zYellow, name: 'Strained', type: 'bar', marker: { color: '#ffcc00' }, text: zYellow.map((v, i) => getPctWeek(v, totalsZ[i])), textposition: 'auto' };
+            
+            Plotly.newPlot('chart-weekly-calc', [trZGreen, trZYellow, traceAvgTextZ], { 
+                ...transparentLayout, 
+                barmode: 'stack', 
+                yaxis: { title: 'Days', gridcolor: 'rgba(0,0,0,0.05)' }, 
+                xaxis: { gridcolor: 'rgba(0,0,0,0)' },
+                showlegend: true, legend: {orientation: 'h', y: -0.2} 
+            }, {responsive: true});
+        }
+    }
+
+    function renderDashboard() {
+        if (!rawData.length) return;
+
+        let cleanData = rawData.filter(d => !d.is_moving && !d.is_workout_window);
+        
+        if (document.getElementById('toggleDeepSleepOnly').checked) {
+            cleanData = cleanData.filter(d => d.is_deep_sleep);
+        } else if (document.getElementById('toggleSleepOnly').checked) {
+            cleanData = cleanData.filter(d => d.is_sleeping);
+        }
+
+        const map = {};
+        cleanData.forEach(d => {
+            const date = d.timestamp_utc.split('T')[0];
+            if (!map[date]) map[date] = { vals: [], workoutMin: 0 };
+            map[date].vals.push(d.rMSSD_ms);
+        });
+        
+        if (rawData[0].global_upper !== undefined) {
+            globalUpper = rawData[0].global_upper;
+            globalLower = rawData[0].global_lower;
+        }
+
+        currentDailyStats = Object.keys(map).map(date => {
+            const vals = map[date].vals.sort((a,b)=>a-b);
+            const median = vals[Math.floor(vals.length/2)];
+            let zCategory = 'Yellow'; 
+            if (globalUpper !== null && median >= globalUpper) {
+                zCategory = 'Green';
+            }
+            return { date: date, median: median, count: vals.length, zCategory: zCategory };
+        }).sort((a,b)=>new Date(a.date)-new Date(b.date));
+
+        if (currentDailyStats.length === 0) {
+            alert("No data found meeting the criteria.");
+            return;
+        }
+
+        globalDailySummary = {};
+        rawData.forEach(d => {
+            const date = d.timestamp_utc.split('T')[0];
+            if (!globalDailySummary[date]) {
+                globalDailySummary[date] = { sleepMin: 0, workoutMin: 0, workoutsCount: 0, medianHRV: 0 };
+            }
+            if (globalDailySummary[date].sleepMin === 0) {
+                globalDailySummary[date].sleepMin = d.sleep_core_min + d.sleep_deep_min + d.sleep_rem_min;
+            }
+        });
+        workoutData.forEach(w => {
+            if (globalDailySummary[w.date]) {
+                globalDailySummary[w.date].workoutMin += w.duration_min;
+                globalDailySummary[w.date].workoutsCount += 1;
+            }
+        });
+        currentDailyStats.forEach(d => {
+            if(globalDailySummary[d.date]) {
+                globalDailySummary[d.date].medianHRV = d.median;
+            }
+        });
+        
+        const allMedians = currentDailyStats.map(d => d.median);
+        const globalAvg = allMedians.reduce((a, b) => a + b, 0) / allMedians.length;
+
+        const morningDates = [];
+        const morningVals = [];
+        const dayGroups = {};
+        
+        rawData.forEach(d => {
+            const date = d.timestamp_utc.split('T')[0];
+            if (!dayGroups[date]) dayGroups[date] = [];
+            dayGroups[date].push(d);
+        });
+
+        Object.keys(dayGroups).sort().forEach(date => {
+            const dayRecords = dayGroups[date];
+            let lastSleepIndex = -1;
+            
+            for (let i = dayRecords.length - 1; i >= 0; i--) {
+                if (dayRecords[i].is_sleeping) { lastSleepIndex = i; break; }
+            }
+            
+            let morningRecord = null;
+            if (lastSleepIndex !== -1) {
+                for (let i = lastSleepIndex + 1; i < dayRecords.length; i++) {
+                    if (!dayRecords[i].is_moving && !dayRecords[i].is_workout_window) {
+                        morningRecord = dayRecords[i];
+                        break;
+                    }
+                }
+            } else {
+                morningRecord = dayRecords.find(d => {
+                    const hr = new Date(d.timestamp_utc).getHours();
+                    return hr >= 4 && hr <= 10 && !d.is_moving;
+                });
+            }
+
+            if (morningRecord) {
+                morningDates.push(date);
+                morningVals.push(morningRecord.rMSSD_ms);
+            }
+        });
+
+        const avgMorning = morningVals.length > 0 ? (morningVals.reduce((a,b)=>a+b,0) / morningVals.length) : 0;
+        document.getElementById('kpi-morning-avg').innerText = avgMorning > 0 ? Math.round(avgMorning) + " ms" : "-";
+
+        const traceMorning = {
+            x: morningDates, y: morningVals,
+            type: 'bar', name: 'Morning HRV',
+            marker: { color: '#5ac8fa', line: { color: '#007aff', width: 1 } }
+        };
+        
+        baseShapesMap['chart-morning'] = [];
+        if (globalUpper) {
+             baseShapesMap['chart-morning'].push({ type: 'line', x0: 0, x1: 1, xref: 'paper', y0: globalUpper, y1: globalUpper, line: { color: '#34c759', width: 1.5, dash: 'dash' } }); 
+        }
+
+        Plotly.newPlot('chart-morning', [traceMorning], {
+            ...transparentLayout,
+            yaxis: { title: 'HRV (ms)', range: [0, 150], gridcolor: 'rgba(0,0,0,0.05)' },
+            xaxis: { gridcolor: 'rgba(0,0,0,0)' },
+            shapes: [...baseShapesMap['chart-morning']]
+        }, {responsive: true});
+
+        function makeTrace(dataset, color, name) {
+            const dates = new Set(dataset.map(d => d.date));
+            const filteredRaw = cleanData.filter(d => dates.has(d.timestamp_utc.split('T')[0]));
+            return {
+                x: filteredRaw.map(d => d.timestamp_utc.split('T')[0]),
+                y: filteredRaw.map(d => d.rMSSD_ms),
+                type: 'box', name: name, marker: { color: color }, line: { color: color, width: 1.5 }, showlegend: true
+            };
+        }
+
+        const greens = currentDailyStats.filter(d => d.zCategory === 'Green');
+        const yellows = currentDailyStats.filter(d => d.zCategory === 'Yellow');
+
+        mainTraces = [];
+        if(greens.length) mainTraces.push(makeTrace(greens, '#34c759', 'Performance'));
+        if(yellows.length) mainTraces.push(makeTrace(yellows, '#ffcc00', 'Strained'));
+
+        const trendY = [];
+        for(let i=0; i<currentDailyStats.length; i++) {
+            if(i<7) { trendY.push(null); continue; }
+            let sum=0; for(let j=0; j<7; j++) sum+=currentDailyStats[i-j].median;
+            trendY.push(sum/7);
+        }
+        mainTraces.push({
+            x: currentDailyStats.map(d => d.date), y: trendY,
+            type: 'scatter', mode: 'lines', name: '7-Day Trend', line: { color: '#1d1d1f', width: 2.5 }
+        });
+
+        if(workoutData && workoutData.length > 0) {
+            mainTraces.push({
+                x: workoutData.map(d => d.date),
+                y: workoutData.map(d => 145), 
+                mode: 'markers', name: 'Workout Day',
+                marker: { symbol: 'circle', size: 10, color: '#af52de', line: {color: 'rgba(255,255,255,0.8)', width: 2} },
+                type: 'scatter', hoverinfo: 'text',
+                text: workoutData.map(d => `Workout: ${Math.round(d.duration_min)} min`)
+            });
+        }
+
+        baseShapesMap['chart-candle'] = [{ type: 'line', x0: 0, x1: 1, xref: 'paper', y0: globalAvg, y1: globalAvg, line: { color: '#86868b', width: 1, dash: 'dot' } }];
+        if (globalUpper) {
+             baseShapesMap['chart-candle'].push({ type: 'line', x0: 0, x1: 1, xref: 'paper', y0: globalUpper, y1: globalUpper, line: { color: '#34c759', width: 1.5, dash: 'dash' } }); 
+        }
+
+        Plotly.newPlot('chart-candle', mainTraces, { 
+            ...transparentLayout, 
+            hovermode: 'closest', 
+            yaxis: { title: 'HRV (ms)', range: [0, 150], gridcolor: 'rgba(0,0,0,0.05)' }, 
+            xaxis: { gridcolor: 'rgba(0,0,0,0)' },
+            shapes: [...baseShapesMap['chart-candle']] 
+        }, {responsive: true});
+        
+        document.getElementById('chart-candle').on('plotly_relayout', function(eventdata){
+            if (eventdata['xaxis.range[0]'] && eventdata['xaxis.range[1]']) {
+                const s = new Date(eventdata['xaxis.range[0]']);
+                const e = new Date(eventdata['xaxis.range[1]']);
+                const filtered = currentDailyStats.filter(d => { const dDate = new Date(d.date); return dDate >= s && dDate <= e; });
+                updateAnalysis(filtered);
+                document.getElementById('zoom-indicator').style.display = 'inline-block';
+            } else {
+                updateAnalysis(currentDailyStats);
+                document.getElementById('zoom-indicator').style.display = 'none';
+            }
+        });
+
+        updateAnalysis(currentDailyStats);
+
+        const stageMap = {};
+        rawData.forEach(d => {
+            const date = d.timestamp_utc.split('T')[0];
+            if (!stageMap[date]) {
+                stageMap[date] = { awake: d.sleep_awake_min || 0, rem: d.sleep_rem_min || 0, core: d.sleep_core_min || 0, deep: d.sleep_deep_min || 0 };
+            }
+        });
+        
+        const stageDates = Object.keys(stageMap).sort((a,b)=>new Date(a)-new Date(b));
+        const getHover = (d, key) => { const tot = stageMap[d].awake + stageMap[d].rem + stageMap[d].core + stageMap[d].deep; const val = stageMap[d][key]; return `${Math.round(val)} mins (${tot>0 ? Math.round((val/tot)*100) : 0}%)`; };
+        
+        const traceDeep = { x: stageDates, y: stageDates.map(d => stageMap[d].deep / 60), name: 'Deep', type: 'bar', marker: {color: '#5856d6'}, text: stageDates.map(d => getHover(d, 'deep')), hoverinfo: 'name+text' };
+        const traceCore = { x: stageDates, y: stageDates.map(d => stageMap[d].core / 60), name: 'Core', type: 'bar', marker: {color: '#007aff'}, text: stageDates.map(d => getHover(d, 'core')), hoverinfo: 'name+text' };
+        const traceREM = { x: stageDates, y: stageDates.map(d => stageMap[d].rem / 60), name: 'REM', type: 'bar', marker: {color: '#5ac8fa'}, text: stageDates.map(d => getHover(d, 'rem')), hoverinfo: 'name+text' };
+        const traceAwake = { x: stageDates, y: stageDates.map(d => stageMap[d].awake / 60), name: 'Awake', type: 'bar', marker: {color: '#ffcc00'}, text: stageDates.map(d => getHover(d, 'awake')), hoverinfo: 'name+text' };
+
+        baseShapesMap['chart-sleep-stages'] = [];
+        Plotly.newPlot('chart-sleep-stages', [traceDeep, traceCore, traceREM, traceAwake], { 
+            ...transparentLayout, 
+            barmode: 'stack', 
+            yaxis: { title: 'Hours', gridcolor: 'rgba(0,0,0,0.05)' }, 
+            xaxis: { gridcolor: 'rgba(0,0,0,0)' },
+            legend: {orientation: 'h', y: -0.2} 
+        }, {responsive: true});
+
+        ['chart-morning', 'chart-candle', 'chart-sleep-stages'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.on('plotly_click', data => {
+                    if(data.points.length > 0) applyHighlight(data.points[0].x);
+                });
+            }
+        });
+    }
+
+    function applyHighlight(dateStr) {
+        const targetDate = String(dateStr).split(' ')[0]; 
+        
+        ['chart-morning', 'chart-candle', 'chart-sleep-stages'].forEach(id => {
+            const chart = document.getElementById(id);
+            if (!chart || !chart.layout) return;
+            
+            const highlightShape = {
+                type: 'rect', xref: 'x', yref: 'paper',
+                x0: targetDate + " 00:00:00", x1: targetDate + " 23:59:59",
+                y0: 0, y1: 1, fillcolor: 'rgba(0, 122, 255, 0.15)', line: {width: 0},
+                name: 'day-highlight', layer: 'below'
+            };
+            
+            Plotly.relayout(id, { shapes: [...baseShapesMap[id], highlightShape] });
+        });
+
+        showXRay(targetDate);
+    }
+
+    function clearHighlights() {
+        document.getElementById('sidePanel').style.display='none';
+        ['chart-morning', 'chart-candle', 'chart-sleep-stages'].forEach(id => {
+            const chart = document.getElementById(id);
+            if (chart && chart.layout) {
+                Plotly.relayout(id, { shapes: [...baseShapesMap[id]] });
+            }
+        });
+    }
+
+    function showXRay(dateStr) {
+        document.getElementById('sidePanel').style.display = 'block';
+        const targetDate = String(dateStr).split(' ')[0];
+        
+        const dateObj = new Date(targetDate + "T00:00:00");
+        document.getElementById('panel-date').innerText = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+
+        const daySamples = rawData.filter(d => d.timestamp_utc.startsWith(targetDate));
+        daySamples.sort((a,b) => new Date(a.timestamp_utc) - new Date(b.timestamp_utc));
+
+        let cleanSamples = daySamples.filter(d => !d.is_moving && !d.is_workout_window);
+        if (document.getElementById('toggleDeepSleepOnly').checked) cleanSamples = cleanSamples.filter(d => d.is_deep_sleep);
+        else if (document.getElementById('toggleSleepOnly').checked) cleanSamples = cleanSamples.filter(d => d.is_sleeping);
+        
+        if (daySamples.length === 0) return;
+
+        let median = 0;
+        const vals = cleanSamples.map(d => d.rMSSD_ms).sort((a,b)=>a-b);
+        if (vals.length > 0) median = vals[Math.floor(vals.length/2)];
+        document.getElementById('panel-median').innerText = Math.round(median) + ' ms';
+        document.getElementById('panel-samples').innerText = cleanSamples.length;
+        
+        const woDetails = document.getElementById('panel-workout-details');
+        const dayWorkout = workoutData.find(w => w.date === targetDate);
+        
+        if (dayWorkout && dayWorkout.duration_min > 0) {
+            woDetails.style.display = 'block';
+            document.getElementById('wo-duration').innerText = Math.round(dayWorkout.duration_min) + " min";
+            document.getElementById('wo-recovery').innerText = dayWorkout.recovery_time_min ? dayWorkout.recovery_time_min + " min" : "N/A";
+            
+            const zTotal = dayWorkout.duration_min || 1; 
+            const zones = dayWorkout.zone_mins || {"<120": 0, "120-140": 0, "140-160": 0, ">160": 0};
+            
+            document.getElementById('zb-z1').style.width = (zones["<120"] / zTotal * 100) + "%";
+            document.getElementById('zb-z1').innerText = zones["<120"] > 5 ? Math.round(zones["<120"]) : "";
+            
+            document.getElementById('zb-z2').style.width = (zones["120-140"] / zTotal * 100) + "%";
+            document.getElementById('zb-z2').innerText = zones["120-140"] > 5 ? Math.round(zones["120-140"]) : "";
+            
+            document.getElementById('zb-z3').style.width = (zones["140-160"] / zTotal * 100) + "%";
+            document.getElementById('zb-z3').innerText = zones["140-160"] > 5 ? Math.round(zones["140-160"]) : "";
+            
+            document.getElementById('zb-z4').style.width = (zones[">160"] / zTotal * 100) + "%";
+            document.getElementById('zb-z4').innerText = zones[">160"] > 5 ? Math.round(zones[">160"]) : "";
+
+            const alertBox = document.getElementById('wo-high-alert');
+            if (zones[">160"] > 0) {
+                alertBox.style.display = 'block';
+                document.getElementById('wo-high-hr-flag').innerText = Math.round(zones[">160"]);
+            } else {
+                alertBox.style.display = 'none';
+            }
+        } else {
+            woDetails.style.display = 'none';
+        }
+
+        const warnBox = document.getElementById('panel-warning');
+        if (cleanSamples.length < 4) {
+            warnBox.style.display = 'block';
+            document.getElementById('warn-count').innerText = cleanSamples.length;
+        } else {
+            warnBox.style.display = 'none';
+        }
+
+        const listDiv = document.getElementById('panel-list');
+        listDiv.innerHTML = ''; 
+
+        let listSamples = daySamples;
+        if (document.getElementById('toggleDeepSleepOnly').checked) listSamples = daySamples.filter(d => d.is_deep_sleep);
+        else if (document.getElementById('toggleSleepOnly').checked) listSamples = daySamples.filter(d => d.is_sleeping);
+
+        listSamples.forEach(d => {
+            const timePart = new Date(d.timestamp_utc).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            
+            const row = document.createElement('div');
+            if (d.is_deep_sleep) row.className = 'sample-row sleep-deep';
+            else if (d.is_sleeping) row.className = 'sample-row sleep-light';
+            else if (d.is_moving) row.className = 'sample-row dirty';
+            else row.className = 'sample-row clean';
+            
+            let badges = "";
+            if (d.is_deep_sleep) badges += `<span class="badge badge-deep">Deep</span>`;
+            else if (d.is_sleeping) badges += `<span class="badge badge-sleep">Core</span>`;
+            else if (d.is_moving) badges += `<span class="badge badge-dirty">Move</span>`;
+            else badges += `<span class="badge badge-clean">Clean</span>`;
+            if (d.is_workout_window) badges += `<span class="badge badge-work">Work</span>`;
+
+            row.innerHTML = `
+                <div><span style="font-weight:600; margin-right:8px; color:#1d1d1f;">${timePart}</span>${badges}</div>
+                <div style="font-family:monospace; font-weight:500;">${Math.round(d.rMSSD_ms)} ms</div>
+            `;
+            listDiv.appendChild(row);
+        });
+        Plotly.Plots.resize('chart-candle');
+    }
+
+    // --- DB EXPORT & IMPORT ENGINE ---
+    async function exportFullDB() {
+        if (!db) { alert("Database not initialized."); return; }
+        try {
+            let dbData = await loadFromDB();
+            
+            const tx = db.transaction(['surveyData'], 'readonly');
+            const surveyReq = tx.objectStore('surveyData').get('user_profile');
+            
+            surveyReq.onsuccess = () => {
+                const fullBackup = {
+                    hrv: dbData.hrv,
+                    workouts: dbData.workouts,
+                    survey: surveyReq.result || null
+                };
+                
+                const jsonStr = JSON.stringify(fullBackup);
+                const blob = new Blob([jsonStr], {type: "application/json"});
+                const sizeMB = (blob.size / (1024 * 1024)).toFixed(2);
+                
+                if (confirm(`Your database backup is ${sizeMB} MB. Proceed with download?`)) {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `neurovis_backup_${new Date().toISOString().split('T')[0]}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }
+            };
+        } catch (err) {
+            alert("Failed to export database: " + err.message);
+        }
+    }
+
+    // --- SERVER UPLOAD ENGINE (Pre-Flight Security) ---
+    async function uploadToNeurovis() {
+        if (!db) { alert("Database not initialized."); return; }
+        
+        const uploadBtn = document.getElementById('btn-upload-server');
+        uploadBtn.innerText = "Encrypting...";
+        uploadBtn.disabled = true;
+
+        try {
+            let dbData = await loadFromDB();
+            
+            // Security Check: Ensure they actually have data to send
+            if (dbData.hrv.length < 14) {
+                alert("Insufficient data. Please import a valid Apple Health export first.");
+                uploadBtn.innerText = "Upload to Neurovis";
+                uploadBtn.disabled = false;
+                return;
+            }
+
+            const tx = db.transaction(['surveyData'], 'readonly');
+            const surveyReq = tx.objectStore('surveyData').get('user_profile');
+            
+            surveyReq.onsuccess = async () => {
+                // 1. Build the payload and attach the UTC timestamp
+                const payload = {
+                    hrv: dbData.hrv,
+                    workouts: dbData.workouts,
+                    survey: surveyReq.result || null,
+                    upload_generated_at: new Date().toISOString()
+                };
+                
+                // 2. Stringify it EXACTLY as the server expects (no extra spaces)
+                const payloadString = JSON.stringify(payload);
+                
+                // 3. Generate SHA-256 Hash using Web Crypto API
+                const SECRET_SALT = "neurovis_alpha_2026";
+                const msgUint8 = new TextEncoder().encode(payloadString + SECRET_SALT);
+                const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+                uploadBtn.innerText = "Transmitting...";
+
+                // 4. Fire to the Flask Server
+                // Note: Change 'localhost' to your Pi's IP if testing from another machine on the network
+                const response = await fetch('https://api.neurovis.io/api/upload', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Payload-Hash': hashHex
+                    },
+                    body: payloadString
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    alert("Success! " + result.message);
+                    uploadBtn.innerText = "Data Vaulted";
+                    uploadBtn.classList.replace('btn-secondary', 'btn-success');
+                } else {
+                    alert("Upload rejected: " + result.error);
+                    uploadBtn.innerText = "Upload Failed";
+                    uploadBtn.disabled = false;
+                }
+            };
+        } catch (err) {
+            alert("Upload error: " + err.message);
+            uploadBtn.innerText = "Upload to Neurovis";
+            uploadBtn.disabled = false;
+        }
+    }
+
+    function importFullDB(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        statusText.innerText = "Importing Backup...";
+        
+        reader.onload = function(e) {
+            try {
+                const data = JSON.parse(e.target.result);
+                if(!data.hrv || !data.workouts) throw new Error("Invalid backup format");
+                
+                const tx = db.transaction(['hrvData', 'workoutData', 'surveyData'], "readwrite");
+                const storeHrv = tx.objectStore('hrvData');
+                const storeWo = tx.objectStore('workoutData');
+                const storeSurvey = tx.objectStore('surveyData');
+                
+                storeHrv.clear();
+                storeWo.clear();
+                storeSurvey.clear();
+                
+                data.hrv.forEach(r => storeHrv.put(r));
+                data.workouts.forEach(r => storeWo.put(r));
+                if(data.survey) storeSurvey.put(data.survey);
+                
+                tx.oncomplete = () => {
+                    statusText.innerText = "Import complete! Reloading...";
+                    refreshDashboardFromDB();
+                    document.getElementById('importInput').value = '';
+                };
+                tx.onerror = (err) => { throw err; };
+            } catch(err) {
+                alert("Import failed: " + err.message);
+                statusText.innerText = "Import failed.";
+                document.getElementById('importInput').value = '';
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    // --- SURVEY UI LOGIC ---
+    function openSurvey() {
+        document.getElementById('surveyModal').style.display = 'flex';
+        
+        // Try to load existing data
+        if(db) {
+            const tx = db.transaction(['surveyData'], 'readonly');
+            const req = tx.objectStore('surveyData').get('user_profile');
+            req.onsuccess = () => {
+                if(req.result) {
+                    const data = req.result;
+                    document.getElementById('svy_age').value = data.age || "";
+                    document.getElementById('svy_sex').value = data.sex || "";
+                    document.getElementById('svy_diet').value = data.diet || "";
+                    document.getElementById('svy_alcohol').value = data.alcohol || "";
+                    document.getElementById('svy_cannabis').value = data.cannabis || "";
+                    document.getElementById('svy_caffeine').value = data.caffeine || "";
+                    document.getElementById('svy_training_type').value = data.training_type || "";
+                    document.getElementById('svy_training_freq').value = data.training_freq || "";
+                    document.getElementById('svy_sleep_consist').value = data.sleep_consist || "";
+                    document.getElementById('svy_sleep_qual').value = data.sleep_qual || "";
+                    document.getElementById('svy_anx_1').value = data.anx_1 || "";
+                    document.getElementById('svy_anx_2').value = data.anx_2 || "";
+                    document.getElementById('svy_dep_1').value = data.dep_1 || "";
+                    document.getElementById('svy_dep_2').value = data.dep_2 || "";
+                    document.getElementById('svy_stress_occ').value = data.stress_occ || "";
+                }
+            };
+        }
+    }
+
+    function closeSurvey() {
+        document.getElementById('surveyModal').style.display = 'none';
+    }
+
+    function saveSurvey() {
+        const surveyData = {
+            id: 'user_profile',
+            age: document.getElementById('svy_age').value,
+            sex: document.getElementById('svy_sex').value,
+            diet: document.getElementById('svy_diet').value,
+            alcohol: document.getElementById('svy_alcohol').value,
+            cannabis: document.getElementById('svy_cannabis').value,
+            caffeine: document.getElementById('svy_caffeine').value,
+            training_type: document.getElementById('svy_training_type').value,
+            training_freq: document.getElementById('svy_training_freq').value,
+            sleep_consist: document.getElementById('svy_sleep_consist').value,
+            sleep_qual: document.getElementById('svy_sleep_qual').value,
+            anx_1: document.getElementById('svy_anx_1').value,
+            anx_2: document.getElementById('svy_anx_2').value,
+            dep_1: document.getElementById('svy_dep_1').value,
+            dep_2: document.getElementById('svy_dep_2').value,
+            stress_occ: document.getElementById('svy_stress_occ').value
+        };
+
+        if(db) {
+            const tx = db.transaction(['surveyData'], 'readwrite');
+            tx.objectStore('surveyData').put(surveyData);
+            tx.oncomplete = () => {
+                closeSurvey();
+            };
+        } else {
+            closeSurvey();
+        }
+    }
+
+
+    const workerCode = `
+        importScripts("https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js");
+
+        let pythonCode = \`
+import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta
+import pandas as pd
+import numpy as np
+import json
+import io
+import zipfile
+from js import postMessage
+
+def send_update(msg):
+    postMessage(json.dumps({"status": "progress", "message": msg}))
+
+def process_zip_stream(zip_bytes, last_sync_str):
+    send_update("Unzipping file...")
+    zf = zipfile.ZipFile(io.BytesIO(zip_bytes.to_py()))
+    
+    xml_filename = next((name for name in zf.namelist() if name.endswith('export.xml')), None)
+    if not xml_filename:
+        return json.dumps({"error": "export.xml not found in zip"})
+
+    step_intervals, workout_intervals, sleep_intervals, hrv_events = [], [], [], []
+    hr_data = [] 
+    
+    current_beats = [] 
+    in_hrv_block = False
+    count_processed = 0
+    count_skipped = 0
+
+    sync_date_str = last_sync_str[:10] if last_sync_str else None
+    send_update("Parsing XML (Fast-forwarding past historical data)...")
+
+    with zf.open(xml_filename) as xml_file:
+        context = ET.iterparse(xml_file, events=("start", "end"))
+        context = iter(context)
+        try: event, root = next(context)
+        except StopIteration: return json.dumps({"error": "Empty XML file"})
+
+        for event, elem in context:
+            # FAST STRING DATE CHECK (O(1) complexity)
+            start_date = elem.get("startDate")
+            is_old = False
+            if sync_date_str and start_date and start_date[:10] < sync_date_str:
+                is_old = True
+
+            if event == "start":
+                if is_old: continue
+
+                if elem.tag == "Workout":
+                    try:
+                        workout_intervals.append({
+                            'start': pd.to_datetime(elem.get("startDate"), utc=True), 
+                            'end': pd.to_datetime(elem.get("endDate"), utc=True),
+                            'duration': float(elem.get("duration", 0))
+                        })
+                    except: pass
+                
+                elif elem.tag == "Record":
+                    record_type = elem.get("type")
+                    if record_type == "HKQuantityTypeIdentifierStepCount":
+                        try:
+                            val = int(elem.get("value", 0))
+                            if val > 0:
+                                step_intervals.append((pd.to_datetime(elem.get("startDate"), utc=True), pd.to_datetime(elem.get("endDate"), utc=True), val))
+                        except: pass
+                    
+                    elif record_type == "HKQuantityTypeIdentifierHeartRate":
+                        try: hr_data.append((pd.to_datetime(elem.get("startDate"), utc=True), float(elem.get("value"))))
+                        except: pass
+                    
+                    elif record_type == "HKQuantityTypeIdentifierHeartRateVariabilitySDNN":
+                        try:
+                            current_record_start = pd.to_datetime(elem.get("startDate"))
+                            in_hrv_block = True
+                            current_beats = []
+                        except: in_hrv_block = False
+
+                    elif record_type == "HKCategoryTypeIdentifierSleepAnalysis":
+                        try:
+                            val = str(elem.get("value")).replace("HKCategoryValueSleepAnalysis", "")
+                            sleep_intervals.append({'start': pd.to_datetime(elem.get("startDate"), utc=True), 'end': pd.to_datetime(elem.get("endDate"), utc=True), 'stage': val})
+                        except: pass
+
+            elif event == "end":
+                if is_old:
+                    elem.clear()
+                    root.clear()
+                    count_skipped += 1
+                    if count_skipped % 100000 == 0: 
+                        send_update(f"Fast-forwarding... skipped {count_skipped:,} old records.")
+                    continue
+
+                if in_hrv_block and elem.tag == "InstantaneousBeatsPerMinute":
+                    try: current_beats.append(float(elem.get("bpm")))
+                    except: pass
+
+                elif elem.tag == "Record":
+                    count_processed += 1
+                    if count_processed % 50000 == 0: 
+                        send_update(f"Analyzed {count_processed:,} new records...")
+
+                    if in_hrv_block and elem.get("type") == "HKQuantityTypeIdentifierHeartRateVariabilitySDNN":
+                        if len(current_beats) > 2:
+                            raw_rr = [(60000.0 / bpm) for bpm in current_beats]
+                            valid_range_rr = [rr for rr in raw_rr if 300 < rr < 1500]
+                            clean_rr = []
+                            if len(valid_range_rr) > 1:
+                                clean_rr.append(valid_range_rr[0])
+                                for i in range(1, len(valid_range_rr)):
+                                    prev_valid = clean_rr[-1] 
+                                    curr = valid_range_rr[i]
+                                    if abs(curr - prev_valid) / prev_valid < 0.20: clean_rr.append(curr)
+                            
+                            if len(clean_rr) >= 3:
+                                rmssd = np.sqrt(np.mean(np.diff(clean_rr) ** 2))
+                                hrv_events.append({'timestamp': current_record_start, 'timestamp_str': current_record_start.isoformat(), 'rMSSD_ms': round(rmssd, 2) })
+                        in_hrv_block = False
+                        current_beats = []
+
+                elem.clear()
+                root.clear()
+
+    send_update("Applying AFib High-Confidence Data Filter...")
+    daily_hrv_counts = {}
+    for event in hrv_events:
+        day_str = event['timestamp_str'][:10]
+        daily_hrv_counts[day_str] = daily_hrv_counts.get(day_str, 0) + 1
+        
+    AFIB_THRESHOLD = 1 
+    
+    high_conf_hrv_events = [e for e in hrv_events if daily_hrv_counts[e['timestamp_str'][:10]] >= AFIB_THRESHOLD]
+    
+    # Check if more than half their recorded days have fewer than 24 readings
+    is_sparse_data = len([d for d, c in daily_hrv_counts.items() if c < 24]) > (len(daily_hrv_counts) * 0.5)
+    
+    dropped_days = len([d for d, c in daily_hrv_counts.items() if c < AFIB_THRESHOLD])
+    kept_days = len([d for d, c in daily_hrv_counts.items() if c >= AFIB_THRESHOLD])
+    
+    send_update(f"Filtered out {dropped_days} sparse days. Analyzing {kept_days} days...")
+    
+    hrv_events = high_conf_hrv_events 
+
+    df_hr = pd.DataFrame(hr_data, columns=['ts', 'bpm']).set_index('ts').sort_index() if hr_data else pd.DataFrame()
+    processed_workouts = []
+    
+    for w in workout_intervals:
+        w_start, w_end = w['start'], w['end']
+        recovery_min = None
+        zone_mins = {"<120": 0, "120-140": 0, "140-160": 0, ">160": 0}
+        
+        if w_start.strftime('%Y-%m-%d') not in [d for d, c in daily_hrv_counts.items() if c >= AFIB_THRESHOLD]:
+            continue
+        
+        if not df_hr.empty:
+            hr_in = df_hr[(df_hr.index >= w_start) & (df_hr.index <= w_end)]
+            if not hr_in.empty:
+                tot = len(hr_in)
+                dur = w['duration']
+                zone_mins["<120"] = round(len(hr_in[hr_in['bpm'] < 120]) / tot * dur, 1)
+                zone_mins["120-140"] = round(len(hr_in[(hr_in['bpm'] >= 120) & (hr_in['bpm'] < 140)]) / tot * dur, 1)
+                zone_mins["140-160"] = round(len(hr_in[(hr_in['bpm'] >= 140) & (hr_in['bpm'] < 160)]) / tot * dur, 1)
+                zone_mins[">160"] = round(len(hr_in[hr_in['bpm'] >= 160]) / tot * dur, 1)
+
+            hr_post = df_hr[(df_hr.index > w_end) & (df_hr.index <= w_end + timedelta(hours=2))]
+            for ts, row in hr_post.iterrows():
+                if row['bpm'] <= 100: 
+                    recovery_min = round((ts - w_end).total_seconds() / 60.0, 1)
+                    break
+                    
+        processed_workouts.append({
+            'date': w_start.strftime('%Y-%m-%d'),
+            'start_utc': w_start.isoformat(),
+            'duration_min': w['duration'],
+            'recovery_time_min': recovery_min,
+            'zone_mins': zone_mins
+        })
+
+    send_update(f"Correlating {len(hrv_events)} HRV records...")
+
+    df_steps = pd.DataFrame(step_intervals, columns=['start', 'end', 'val']).sort_values('start') if step_intervals else pd.DataFrame(columns=['start', 'end', 'val'])
+    df_workouts = pd.DataFrame(workout_intervals).sort_values('start') if workout_intervals else pd.DataFrame(columns=['start', 'end', 'duration'])
+    if not df_workouts.empty: df_workouts['end_buffered'] = df_workouts['end'] + timedelta(hours=2)
+
+    df_sleep = pd.DataFrame(sleep_intervals).sort_values('start') if sleep_intervals else pd.DataFrame(columns=['start', 'end', 'stage'])
+    if not df_sleep.empty: df_sleep['duration_min'] = (df_sleep['end'] - df_sleep['start']).dt.total_seconds() / 60.0
+
+    daily_sleep_totals = {}
+    if not df_sleep.empty:
+        for idx, row in df_sleep.iterrows():
+            day_key = row['end'].strftime('%Y-%m-%d')
+            if day_key not in daily_sleep_totals: daily_sleep_totals[day_key] = {}
+            daily_sleep_totals[day_key][row['stage']] = daily_sleep_totals[day_key].get(row['stage'], 0) + row['duration_min']
+
+    pre_calc_log = []
+    for event in hrv_events:
+        t_utc = event['timestamp'].tz_convert('UTC')
+        day_str = t_utc.strftime('%Y-%m-%d')
+        
+        t_start, t_end = t_utc - timedelta(seconds=30), t_utc + timedelta(seconds=30)
+        is_moving = (df_steps[(df_steps['end'] > t_start) & (df_steps['start'] < t_end)]['val'].sum()) > 0
+        
+        is_workout_window = False
+        if not df_workouts.empty:
+            is_workout_window = not df_workouts[(df_workouts['start'] <= t_utc) & (df_workouts['end_buffered'] >= t_utc)].empty
+
+        is_sleeping, is_deep_sleep = False, False
+        if not df_sleep.empty:
+            active_sleep = df_sleep[(df_sleep['start'] <= t_utc) & (df_sleep['end'] >= t_utc)]
+            is_sleeping = not active_sleep[~active_sleep['stage'].isin(['InBed', 'Awake'])].empty
+            is_deep_sleep = not active_sleep[active_sleep['stage'] == 'AsleepDeep'].empty
+
+        day_sleep = daily_sleep_totals.get(day_str, {})
+
+        pre_calc_log.append({
+            "timestamp_utc": event['timestamp_str'],
+            "rMSSD_ms": float(event['rMSSD_ms']),
+            "is_moving": bool(is_moving),
+            "is_workout_window": bool(is_workout_window),
+            "is_sleeping": bool(is_sleeping),
+            "is_deep_sleep": bool(is_deep_sleep),
+            "sleep_core_min": float(day_sleep.get('AsleepCore', 0)),
+            "sleep_deep_min": float(day_sleep.get('AsleepDeep', 0)),
+            "sleep_rem_min": float(day_sleep.get('AsleepREM', 0)),
+            "sleep_awake_min": float(day_sleep.get('Awake', 0)),
+            "val": float(event['rMSSD_ms'])
+        })
+
+    return json.dumps({ "hrv": pre_calc_log, "workouts": processed_workouts, "is_sparse": bool(is_sparse_data) })
+        \`;
+
+        async function init() {
+            self.pyodide = await loadPyodide();
+            await self.pyodide.loadPackage(['pandas', 'numpy']);
+            await self.pyodide.runPythonAsync(pythonCode);
+            postMessage(JSON.stringify({ status: 'ready' }));
+        }
+
+        init();
+
+        self.onmessage = async (e) => {
+            if (e.data.type === 'PROCESS_ZIP') {
+                try {
+                    let process_func = self.pyodide.globals.get('process_zip_stream');
+                    let resultStr = process_func(e.data.zipBytes, e.data.lastSyncDate || "");
+                    
+                    let resultJson = JSON.parse(resultStr);
+                    if (resultJson.error) throw new Error(resultJson.error);
+                    postMessage(JSON.stringify({ status: 'success', data: resultJson }));
+                } catch (err) {
+                    postMessage(JSON.stringify({ status: 'error', error: err.message }));
+                }
+            }
+        };
+    `;
+
+    const blob = new Blob([workerCode], {type: "application/javascript"});
+    const pyWorker = new Worker(URL.createObjectURL(blob));
+
+    const dbName = "NeuroHealthDB";
+    let db;
+
+    const initDB = new Promise((resolve, reject) => {
+        const request = indexedDB.open(dbName, 4); 
+        request.onupgradeneeded = (e) => {
+            db = e.target.result;
+            if (!db.objectStoreNames.contains('hrvData')) db.createObjectStore('hrvData', { keyPath: "timestamp_utc" }); 
+            if (!db.objectStoreNames.contains('workoutData')) db.createObjectStore('workoutData', { keyPath: "start_utc" }); 
+            if (!db.objectStoreNames.contains('surveyData')) db.createObjectStore('surveyData', { keyPath: "id" }); 
+        };
+        request.onsuccess = (e) => { db = e.target.result; resolve(); };
+        request.onerror = (e) => reject(e);
+    });
+
+    async function saveToDB(payload) {
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(['hrvData', 'workoutData'], "readwrite");
+            const storeHrv = tx.objectStore('hrvData');
+            const storeWo = tx.objectStore('workoutData');
+            
+            payload.hrv.forEach(record => storeHrv.put(record)); 
+            payload.workouts.forEach(record => storeWo.put(record)); 
+            
+            tx.oncomplete = () => resolve();
+            tx.onerror = (e) => reject(e);
+        });
+    }
+
+    async function loadFromDB() {
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(['hrvData', 'workoutData'], "readonly");
+            
+            let result = { hrv: [], workouts: [] };
+            let hrvReq = tx.objectStore('hrvData').getAll();
+            let woReq = tx.objectStore('workoutData').getAll();
+            
+            tx.oncomplete = () => {
+                result.hrv = hrvReq.result;
+                result.workouts = woReq.result;
+                resolve(result);
+            };
+            tx.onerror = (e) => reject(e);
+        });
+    }
+
+    let isWorkerReady = false;
+    const statusText = document.getElementById('file-status');
+
+    pyWorker.onmessage = async (e) => {
+        const data = JSON.parse(e.data);
+        if (data.status === 'ready') {
+            isWorkerReady = true;
+            statusText.innerText = "Engine Ready. Local Data Loaded.";
+            await initDB;
+            refreshDashboardFromDB();
+        } else if (data.status === 'progress') {
+            statusText.innerText = data.message;
+        } else if (data.status === 'success') {
+            if (data.data.is_sparse) {
+                alert(" WARNING: LOW RESOLUTION DATA DETECTED\n\nIt appears 'AFib History' is not enabled on your Apple Watch. Your HRV data only has a few readings per day.\n\nWhile Neurovis will display your data, your baseline trends and daily readiness scores will be highly inaccurate until AFib History is enabled.");
+            }
+            statusText.innerText = "Saving to Local Database...";
+            await saveToDB(data.data);
+            await refreshDashboardFromDB();
+            statusText.innerText = "Upload and merge complete!";
+            document.getElementById('fileInput').value = ''; 
+            
+            // Pop open the survey when new data is uploaded
+            openSurvey();
+        } else if (data.status === 'error') {
+            statusText.innerText = "Error processing file.";
+            alert("Error processing zip: " + data.error);
+            document.getElementById('fileInput').value = '';
+        }
+    };
+
+   async function getLastSyncDate() {
+        return new Promise((resolve) => {
+            if (!db) return resolve(null);
+            const tx = db.transaction(['hrvData'], 'readonly');
+            const store = tx.objectStore('hrvData');
+            const req = store.openCursor(null, 'prev'); 
+            req.onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (cursor) {
+                    // Create a 2-day safety buffer to catch overlapping overnight sleep
+                    let lastDate = new Date(cursor.key);
+                    lastDate.setDate(lastDate.getDate() - 2);
+                    resolve(lastDate.toISOString().split('T')[0]);
+                } 
+                else resolve(null);
+            };
+            req.onerror = () => resolve(null);
+        });
+    }
+
+    async function handleZipUpload(event) {
+        if (!isWorkerReady) { alert("Please wait, Python engine is still loading..."); return; }
+        const file = event.target.files[0];
+        if (!file) return;
+
+        statusText.innerText = "Checking existing data...";
+        const lastSyncDate = await getLastSyncDate();
+
+        statusText.innerText = lastSyncDate ? `Found prior data. Extracting records after ${lastSyncDate.split('T')[0]}...` : "Extracting Zip...";
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            pyWorker.postMessage({ 
+                type: 'PROCESS_ZIP', 
+                zipBytes: new Uint8Array(e.target.result),
+                lastSyncDate: lastSyncDate // Pass the cutoff date to the worker
+            });
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    async function refreshDashboardFromDB() {
+        let dbData = await loadFromDB();
+        if (dbData.hrv.length === 0) {
+            statusText.innerText = "Database empty. Upload a zip to begin.";
+            return;
+        }
+
+        dbData.hrv.sort((a, b) => new Date(a.timestamp_utc) - new Date(b.timestamp_utc));
+        
+        workoutData = dbData.workouts || [];
+
+        const hrvValues = dbData.hrv.map(d => d.rMSSD_ms);
+        const global_avg = hrvValues.reduce((a, b) => a + b, 0) / hrvValues.length;
+        const global_sd = Math.sqrt(hrvValues.map(x => Math.pow(x - global_avg, 2)).reduce((a, b) => a + b, 0) / hrvValues.length);
+
+        rawData = dbData.hrv.map(d => {
+            const z_score = (d.rMSSD_ms - global_avg) / global_sd;
+            let zone = "RED";
+            if (z_score >= -0.5) zone = "GREEN";
+            else if (z_score >= -1.5) zone = "YELLOW";
+
+            return {
+                ...d, z_score: z_score, stress_zone: zone,
+                global_avg: global_avg, global_upper: global_avg + (0.5 * global_sd), global_lower: global_avg - (1.5 * global_sd)
+            };
+        });
+        
+        statusText.innerText = `Loaded ${rawData.length} records.`;
+        renderDashboard(); 
+        
+        // Show the upload button now that we have data
+        const uploadBtn = document.getElementById('btn-upload-server');
+        if (uploadBtn) uploadBtn.style.display = 'inline-flex';
+    }
+</script>
+
+</body>
+</html>

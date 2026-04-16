@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Neurovis Forensics v3.8.4 | Clinical Insights</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
+    
+    <style>
+        body { 
+            background: #050505; 
+            color: #e0e0e0; 
+            font-family: 'Courier New', monospace; 
+            padding: 20px; 
+            height: 100vh;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        h1 { margin: 0; color: #888; font-size: 24px; }
+        .subtitle { font-size: 12px; color: #555; }
+        
+        /* UPLOAD AREA */
+        .upload-area {
+            border: 2px dashed #444; 
+            padding: 60px; 
+            text-align: center;
+            margin: auto; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            transition: 0.2s;
+            width: 50%;
+        }
+
+        .upload-area:hover { 
+            border-color: #00ff9d; 
+            background: #0a0a0a; 
+        }
+        
+        /* DASHBOARD LAYOUT */
+        #dashboard { 
+            display: none; 
+            flex: 1;
+            overflow-y: auto; 
+            padding-right: 10px;
+        }
+
+        /* CHARTS */
+        .chart-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+            height: 320px; /* slightly taller to fit HTML titles */
+        }
+        
+        .chart-container {
+            background: #111; 
+            border: 1px solid #222; 
+            border-radius: 8px;
+            padding: 10px; 
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .chart-canvas-wrapper {
+            flex: 1;
+            position: relative;
+            min-height: 0;
+        }
+
+        /* STATS GRID */
+        .stat-grid { 
+            display: grid; 
+            grid-template-columns: repeat(9, 1fr); /* Upgraded to 9 columns */
+            gap: 10px; 
+            margin-bottom: 30px; 
+        }
+
+        .stat-box { 
+            background: #1a1a1a; 
+            padding: 10px; 
+            border-radius: 4px; 
+            text-align: center; 
+            border: 1px solid #222;
+        }
+
+        .stat-val { 
+            font-size: 18px; 
+            font-weight: bold; 
+            color: #fff; 
+            margin-top: 5px; 
+        }
+
+        .stat-label { font-size: 10px; color: #888; font-weight: bold; }
+        
+        /* TOOLTIPS */
+        .tooltip-container { position: relative; cursor: help; display: inline-block; }
+        .chart-title-text { color: #fff; font-size: 12px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; border-bottom: 1px dashed #444; padding-bottom: 2px; }
+        .chart-header-wrapper { text-align: center; margin-bottom: 10px; }
+
+        .custom-tooltip { 
+            position: absolute; top: 120%; left: 50%; transform: translateX(-50%); 
+            background: rgba(0, 0, 0, 0.95); color: #ccc; padding: 12px; border-radius: 6px; 
+            font-size: 11px; font-family: 'Courier New', monospace; width: 220px; 
+            text-align: center; z-index: 1000; opacity: 0; visibility: hidden; 
+            transition: opacity 0.2s ease, top 0.2s ease; pointer-events: none; 
+            border: 1px solid #0088ff; box-shadow: 0 4px 15px rgba(0,0,0,0.8); line-height: 1.4; font-weight: normal;
+        }
+        .tooltip-container:hover .custom-tooltip { opacity: 1; visibility: visible; top: 130%; }
+
+        /* ZONE COLORS */
+        .z-exc { color: #ff00ff; }
+        .z-str { color: #ff0000; }
+        .z-cal { color: #00ff9d; }
+        .z-sad { color: #00ccff; }
+        
+        /* BUTTONS */
+        .btn {
+            background: #222; border: 1px solid #444; color: #fff;
+            padding: 5px 15px; cursor: pointer; font-family: inherit;
+        }
+        .btn:hover { background: #444; border-color: #888; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #050505; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>
+            <h1>NEUROVIS FORENSICS</h1>
+            <span class="subtitle">v3.8.4 | HIGH-DENSITY ANALYTICS ENGINE</span>
+        </div>
+        
+        <div style="display:flex; align-items:center; gap:15px;">
+            <div style="background:#111; border:1px solid #333; padding:5px 10px; border-radius:4px; display:flex; align-items:center; gap:10px;">
+                <div><span style="font-size:10px; color:#888;">AX NULL:</span><input type="number" id="ax-null-input" step="0.01" style="background:#000; color:#fff; border:1px solid #444; width:50px; font-family:inherit;"></div>
+                <div><span style="font-size:10px; color:#888;">NULL HRV:</span><input type="number" id="hrv-null-input" step="0.1" style="background:#000; color:#fff; border:1px solid #444; width:50px; font-family:inherit;"></div>
+                <div><span style="font-size:10px; color:#888;">NULL R-BETA:</span><input type="number" id="rbeta-null-input" step="0.01" style="background:#000; color:#fff; border:1px solid #444; width:50px; font-family:inherit;"></div>
+                <button class="btn" style="padding:2px 8px; font-size:10px;" onclick="updateOverrides()">RECALC</button>
+                <button class="btn" id="time-mode-btn" style="padding:2px 8px; font-size:10px; border-color:#555;" onclick="toggleTimeMode()">TIME: SESSION</button>
+            </div>
+            <button class="btn" onclick="resetZoom()">RESET ZOOM</button>
+        </div>
+    </header>
+    
+    <div class="upload-area" id="drop-zone">
+        <h2>DRAG & DROP SESSION CSV</h2>
+        <p style="color: #666">Supports All Neurovis Protocols</p>
+        <input type="file" id="file-input" style="display: none;" accept=".csv">
+    </div>
+
+    <div id="dashboard">
+        
+        <div class="stat-grid">
+            <div class="stat-box">
+                <div class="tooltip-container">
+                    <div class="stat-label">DURATION</div>
+                    <div class="custom-tooltip"><span style="color:#0088ff; font-weight:bold;">TOTAL DURATION</span><br>The mathematical time length of the currently zoomed viewport.</div>
+                </div>
+                <div class="stat-val" id="stat-dur">--</div>
+            </div>
+            <div class="stat-box">
+                <div class="tooltip-container">
+                    <div class="stat-label">AVG HR</div>
+                    <div class="custom-tooltip"><span style="color:#0088ff; font-weight:bold;">HEART RATE</span><br>Average Beats Per Minute (BPM) over the selected timeframe.</div>
+                </div>
+                <div class="stat-val" style="color:#ff4444" id="stat-hr">--</div>
+            </div>
+            <div class="stat-box">
+                <div class="tooltip-container">
+                    <div class="stat-label">AVG HRV</div>
+                    <div class="custom-tooltip"><span style="color:#0088ff; font-weight:bold;">HEART RATE VARIABILITY</span><br>Average rMSSD. Higher values generally indicate stronger vagal tone and parasympathetic recovery.</div>
+                </div>
+                <div class="stat-val" style="color:#00ccff" id="stat-hrv">--</div>
+            </div>
+            <div class="stat-box">
+                <div class="tooltip-container">
+                    <div class="stat-label">AVG FAA</div>
+                    <div class="custom-tooltip"><span style="color:#0088ff; font-weight:bold;">FRONTAL ALPHA ASYMMETRY</span><br>Mathematical difference between Left and Right Alpha. Positive values indicate an Approach/Calm state. Negative indicates Withdrawal/Stress.</div>
+                </div>
+                <div class="stat-val" style="color:#aa00ff" id="stat-faa">--</div>
+            </div>
+            <div class="stat-box">
+                <div class="tooltip-container">
+                    <div class="stat-label">AVG VALENCE</div>
+                    <div class="custom-tooltip"><span style="color:#0088ff; font-weight:bold;">VALENCE</span><br>Smoothed emotional positivity derived from the Circumplex model.</div>
+                </div>
+                <div class="stat-val" style="color:#ff00ff" id="stat-val">--</div>
+            </div>
+            <div class="stat-box">
+                <div class="tooltip-container">
+                    <div class="stat-label">AVG AX SCORE</div>
+                    <div class="custom-tooltip"><span style="color:#0088ff; font-weight:bold;">AX LOAD (SOMATIC)</span><br>Physical anxiety and bodily arousal direction.</div>
+                </div>
+                <div class="stat-val" style="color:#3498db" id="stat-ax-score">--</div>
+            </div>
+            <div class="stat-box">
+                <div class="tooltip-container">
+                    <div class="stat-label">AVG AXX SCORE</div>
+                    <div class="custom-tooltip"><span style="color:#0088ff; font-weight:bold;">AXX LOAD (COGNITIVE)</span><br>A composite index combining Somatic (Body) anxiety with Beta-wave (Brain) cognitive load.</div>
+                </div>
+                <div class="stat-val" style="color:#ffcc00" id="stat-axx-score">--</div>
+            </div>
+            <div class="stat-box">
+                <div class="tooltip-container">
+                    <div class="stat-label">DOMINANT ZONE</div>
+                    <div class="custom-tooltip"><span style="color:#0088ff; font-weight:bold;">DOMINANT EMOTION</span><br>The most frequently registered quadrant on the 2D Circumplex model during this timeframe.</div>
+                </div>
+                <div class="stat-val" id="stat-zone">--</div>
+            </div>
+            <div class="stat-box">
+                <div class="tooltip-container">
+                    <div class="stat-label">PRIMARY SOURCE</div>
+                    <div class="custom-tooltip"><span style="color:#0088ff; font-weight:bold;">HARDWARE SOURCE</span><br>The primary device utilized for optical heart rate telemetry (Muse PPG vs Polar Verity/H10).</div>
+                </div>
+                <div class="stat-val" id="stat-src">--</div>
+            </div>
+        </div>
+
+        <div class="chart-row">
+            <div class="chart-container">
+                <div class="chart-header-wrapper">
+                    <div class="tooltip-container">
+                        <span class="chart-title-text">ANXIETY SCORE (AX/AXX) - MINUTE AVERAGES</span>
+                        <div class="custom-tooltip">Plots Somatic (Body) and Cognitive (Brain) anxiety load over a rolling 1-minute window. Detects real-time stress escalations.</div>
+                    </div>
+                </div>
+                <div class="chart-canvas-wrapper"><canvas id="axMinuteChart"></canvas></div>
+            </div>
+        </div>
+
+        <div class="chart-row">
+            <div class="chart-container">
+                <div class="chart-header-wrapper">
+                    <div class="tooltip-container">
+                        <span class="chart-title-text">HEMISPHERIC BETA LOAD (COGNITIVE / STRESS)</span>
+                        <div class="custom-tooltip">Plots high-frequency electrical activity. Left Beta correlates with intense logic and detail focus. Right Beta correlates with hyper-vigilance and active stress.</div>
+                    </div>
+                </div>
+                <div class="chart-canvas-wrapper"><canvas id="betaChart"></canvas></div>
+            </div>
+        </div>
+
+        <div class="chart-row">
+            <div class="chart-container">
+                <div class="chart-header-wrapper">
+                    <div class="tooltip-container">
+                        <span class="chart-title-text">SESSION TIMELINE (EMOTIONAL ZONES)</span>
+                        <div class="custom-tooltip">Displays the discrete emotional states (Calm, Stressed, Excited, Sad) mapped over the timeline, underlaid by algorithmic phase markers.</div>
+                    </div>
+                </div>
+                <div class="chart-canvas-wrapper"><canvas id="zoneChart"></canvas></div>
+            </div>
+        </div>
+
+        <div class="chart-row">
+            <div class="chart-container">
+                <div class="chart-header-wrapper">
+                    <div class="tooltip-container">
+                        <span class="chart-title-text">CARDIAC AUDIT (HR & HRV)</span>
+                        <div class="custom-tooltip">Plots raw Beats Per Minute against instantaneous Heart Rate Variability (rMSSD). Gray blocks at the bottom indicate hardware shifts.</div>
+                    </div>
+                </div>
+                <div class="chart-canvas-wrapper"><canvas id="cardiacChart"></canvas></div>
+            </div>
+        </div>
+
+        <div class="chart-row">
+            <div class="chart-container">
+                <div class="chart-header-wrapper">
+                    <div class="tooltip-container">
+                        <span class="chart-title-text">BRAIN SPECTRUM (L+R AVG)</span>
+                        <div class="custom-tooltip">Full frequency breakdown. Delta (Sleep/Artifact), Theta (Deep Focus/Meditation), Alpha (Relaxed/Awake), Beta (Active/Thinking), Gamma (Peak Processing).</div>
+                    </div>
+                </div>
+                <div class="chart-canvas-wrapper"><canvas id="spectrumChart"></canvas></div>
+            </div>
+        </div>
+
+        <div class="chart-row">
+            <div class="chart-container">
+                <div class="chart-header-wrapper">
+                    <div class="tooltip-container">
+                        <span class="chart-title-text">ARTIFACT INSPECTOR</span>
+                        <div class="custom-tooltip">Highlights extremes in Delta and Gamma to identify jaw clenches, blinks, or poor sensor impedance.</div>
+                    </div>
+                </div>
+                <div class="chart-canvas-wrapper"><canvas id="artifactChart"></canvas></div>
+            </div>
+            <div class="chart-container">
+                <div class="chart-header-wrapper">
+                    <div class="tooltip-container">
+                        <span class="chart-title-text">RAW ALPHA (FRONTAL ASYMMETRY)</span>
+                        <div class="custom-tooltip">The raw electrical microvolts driving the FAA metric. The dashed line shows algorithmic trust weighting between EEG and Heart Rate data.</div>
+                    </div>
+                </div>
+                <div class="chart-canvas-wrapper"><canvas id="brainChart"></canvas></div>
+            </div>
+        </div>
+
+        <div class="chart-row">
+            <div class="chart-container">
+                <div class="chart-header-wrapper">
+                    <div class="tooltip-container">
+                        <span class="chart-title-text">SMOOTHED VECTORS</span>
+                        <div class="custom-tooltip">Continuous mathematical smoothing of Arousal (Energy) and Valence (Positivity) from the Circumplex model.</div>
+                    </div>
+                </div>
+                <div class="chart-canvas-wrapper"><canvas id="vectorChart"></canvas></div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        let charts = []; 
+        let globalData = []; 
+        
+        // Globals for Override Logic
+        let globalAxNull = 0.0; 
+        let globalHrvNull = 50.0;
+        let globalRBetaNull = 0.0;
+        let timeMode = 'session'; 
+        
+        dropZone.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFile);
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.borderColor = '#fff'; });
+        dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); dropZone.style.borderColor = '#444'; });
+        dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.style.borderColor = '#444'; if (e.dataTransfer.files.length) processFile(e.dataTransfer.files[0]); });
+
+        function handleFile(e) { if (e.target.files.length) processFile(e.target.files[0]); }
+
+        function processFile(file) {
+            Papa.parse(file, {
+                header: true, 
+                dynamicTyping: true, 
+                skipEmptyLines: 'greedy', 
+                transformHeader: function(h) {
+                    return h ? h.trim() : "";
+                },
+                complete: (results) => { 
+                    if (results.data.length > 0) {
+                        globalData = results.data.filter(r => r.timestamp && String(r.timestamp).trim() !== "");
+                        
+                        if(globalData.length === 0) {
+                            alert("Error: No valid timeline data found in CSV. Please check the file formatting.");
+                            return;
+                        }
+                        
+                        const startTime = new Date(globalData[0].timestamp).getTime();
+                        const firstMinData = globalData.filter(r => ((new Date(r.timestamp).getTime() - startTime) / 1000) <= 60);
+                        
+                        // Recalculate 1-Min Nulls
+                        let sumAx = 0, sumHrv = 0, sumRBeta = 0;
+                        let hrvCount = 0;
+                        
+                        firstMinData.forEach(r => {
+                            const threat = (r.R_alpha !== undefined ? r.R_alpha : 0) * -1;
+                            const solver = (r.L_alpha !== undefined ? r.L_alpha : 0) * -1;
+                            sumAx += (r.raw_ax !== undefined ? r.raw_ax : (threat - solver));
+                            sumRBeta += (r.R_beta !== undefined ? r.R_beta : 0);
+                            if(r.rmssd > 0) { sumHrv += r.rmssd; hrvCount++; }
+                        });
+
+                        globalAxNull = firstMinData.length ? (sumAx / firstMinData.length) : 0;
+                        globalRBetaNull = firstMinData.length ? (sumRBeta / firstMinData.length) : 0;
+                        globalHrvNull = hrvCount ? (sumHrv / hrvCount) : 50;
+                        
+                        document.getElementById('ax-null-input').value = globalAxNull.toFixed(4);
+                        document.getElementById('hrv-null-input').value = globalHrvNull.toFixed(1);
+                        document.getElementById('rbeta-null-input').value = globalRBetaNull.toFixed(4);
+
+                        renderDashboard(globalData); 
+                        calculateStats(globalData); 
+                    }
+                },
+                error: function(error) {
+                    console.error("PapaParse Error:", error);
+                    alert("Failed to parse CSV file. See console for details.");
+                }
+            });
+        }
+
+        function updateOverrides() {
+            globalAxNull = parseFloat(document.getElementById('ax-null-input').value) || 0;
+            globalHrvNull = parseFloat(document.getElementById('hrv-null-input').value) || 50;
+            globalRBetaNull = parseFloat(document.getElementById('rbeta-null-input').value) || 0;
+            resetZoom(); 
+        }
+
+        function toggleTimeMode() {
+            timeMode = (timeMode === 'session') ? 'real' : 'session';
+            document.getElementById('time-mode-btn').innerText = (timeMode === 'session') ? 'TIME: SESSION' : 'TIME: REAL';
+            if (globalData.length > 0) {
+                resetZoom();
+            }
+        }
+
+        function resetZoom() {
+            charts.forEach(c => c.resetZoom());
+            renderDashboard(globalData); 
+            calculateStats(globalData); 
+        }
+
+        function calculateStats(dataSlice) {
+            if (!dataSlice || dataSlice.length === 0) return;
+
+            const startTime = new Date(dataSlice[0].timestamp).getTime();
+            const endTime = new Date(dataSlice[dataSlice.length-1].timestamp).getTime();
+            document.getElementById('stat-dur').innerText = ((endTime - startTime) / 1000).toFixed(1) + "s";
+
+            const hr = dataSlice.map(r => r.hr).filter(v => v > 0);
+            document.getElementById('stat-hr').innerText = hr.length ? Math.round(hr.reduce((a,b)=>a+b,0)/hr.length) : "--";
+
+            const rmssd = dataSlice.map(r => r.rmssd).filter(v => v > 0);
+            document.getElementById('stat-hrv').innerText = rmssd.length ? Math.round(rmssd.reduce((a,b)=>a+b,0)/rmssd.length) : "--";
+
+            const faa = dataSlice.map(r => {
+                if (r.raw_faa !== undefined) return r.raw_faa;
+                if (r.valence !== undefined) return r.valence;
+                if (r.R_alpha !== undefined && r.L_alpha !== undefined) return r.R_alpha - r.L_alpha;
+                return undefined;
+            }).filter(v => v !== undefined && v !== null && !isNaN(v));
+            document.getElementById('stat-faa').innerText = faa.length ? (faa.reduce((a,b)=>a+b,0)/faa.length).toFixed(3) : "--";
+
+            const valence = dataSlice.map(r => r.valence || 0);
+            document.getElementById('stat-val').innerText = valence.length ? (valence.reduce((a,b)=>a+b,0)/valence.length).toFixed(2) : "--";
+
+            // AX & AXX Score Engine
+            let sumAx = 0, sumAxx = 0;
+            const nullRBetaLin = Math.pow(10, globalRBetaNull);
+
+            dataSlice.forEach(r => {
+                const threat = (r.R_alpha !== undefined ? r.R_alpha : 0) * -1;
+                const solver = (r.L_alpha !== undefined ? r.L_alpha : 0) * -1;
+                const rawAx = r.raw_ax !== undefined ? r.raw_ax : (threat - solver);
+                
+                sumAx += (rawAx - globalAxNull);
+
+                const liveRBetaLin = Math.pow(10, (r.R_beta !== undefined ? r.R_beta : 0));
+                const cogMult = nullRBetaLin > 0 ? (liveRBetaLin / nullRBetaLin) : 1.0;
+                const somMult = r.rmssd > 0 ? (globalHrvNull / r.rmssd) : 1.0;
+
+                const rawAxx = rawAx * cogMult * somMult;
+                sumAxx += rawAxx; 
+            });
+
+            document.getElementById('stat-ax-score').innerText = (sumAx / dataSlice.length).toFixed(4);
+            document.getElementById('stat-axx-score').innerText = (sumAxx / dataSlice.length).toFixed(4);
+
+            const counts = {};
+            dataSlice.forEach(r => { const z = r.zone || r.zone_guess; if(z) counts[z] = (counts[z]||0)+1; });
+            const domZone = Object.keys(counts).length ? Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b) : "--";
+            
+            const domElem = document.getElementById('stat-zone');
+            domElem.innerText = domZone;
+            domElem.className = "stat-val"; 
+            if(domZone === "EXCITED") domElem.className = "stat-val z-exc";
+            if(domZone === "CALM") domElem.className = "stat-val z-cal";
+            if(domZone === "STRESSED") domElem.className = "stat-val z-str";
+            if(domZone === "SAD/BORED") domElem.className = "stat-val z-sad";
+
+            const hr_source = dataSlice.map(r => (r.hr_source === "MUSE" ? 1 : 0));
+            const srcAvg = hr_source.length ? hr_source.reduce((a,b)=>a+b,0)/hr_source.length : 0;
+            document.getElementById('stat-src').innerText = srcAvg > 0.5 ? "MUSE" : "POLAR";
+        }
+
+        function renderDashboard(cleanData) {
+            document.getElementById('dashboard').style.display = 'block';
+            document.getElementById('drop-zone').style.display = 'none';
+            
+            charts.forEach(c => c.destroy());
+            charts = [];
+
+            const startTime = new Date(cleanData[0].timestamp).getTime();
+            
+            const labels = cleanData.map(r => {
+                const d = new Date(r.timestamp);
+                return timeMode === 'real' ? d.toLocaleTimeString() : ((d.getTime() - startTime) / 1000).toFixed(1);
+            });
+
+            const hr = cleanData.map(r => r.hr);
+            const rmssd = cleanData.map(r => r.rmssd);
+            const base_hrv = cleanData.map(r => r.base_hrv !== undefined ? r.base_hrv : 50);
+            const brain_weight = cleanData.map(r => r.brain_weight !== undefined ? r.brain_weight : 0.5);
+            const hr_source = cleanData.map(r => (r.hr_source === "MUSE" ? 1 : 0));
+            const manual_label = cleanData.map(r => r.manual_label);
+
+            const getPhaseDatasets = (targetMax) => {
+                const uniqueLabels = [...new Set(manual_label)].filter(l => l && l.trim() !== "");
+                const datasets = [];
+                const colorMap = {
+                    "STIMULUS": "rgba(255, 255, 255, 1.0)",
+                    "CHAOS_STRESS": "rgba(255, 0, 0, 0.2)",
+                    "CHAOS_ANTICIPATION": "rgba(255, 200, 0, 0.2)",
+                    "CHAOS_RECOVERY": "rgba(0, 200, 255, 0.2)",
+                    "CHAOS_BASELINE": "rgba(0, 255, 100, 0.1)",
+                    "REACTIVITY": "rgba(255, 100, 0, 0.2)",
+                    "HABITUATION": "rgba(200, 0, 255, 0.2)",
+                    "CALIBRATION": "rgba(0, 255, 100, 0.1)",
+                    "CALIB_NEUTRAL": "rgba(100, 100, 100, 0.2)",
+                    "CALIB_POS": "rgba(0, 255, 0, 0.2)",
+                    "CALIB_NEG": "rgba(255, 0, 0, 0.2)",
+                    "WASHOUT": "rgba(0, 200, 255, 0.2)",
+                    "SESSION_CALIBRATION": "rgba(100, 100, 100, 0.2)",
+                    "SESSION_RESONANCE": "rgba(0, 255, 200, 0.2)",
+                    "SESSION_POSITIVITY": "rgba(255, 215, 0, 0.2)",
+                    "UNIFIED_CALIBRATION": "rgba(100, 100, 100, 0.2)",
+                    "STIM_PRE": "rgba(100, 100, 100, 0.1)",
+                    "STIM_SHOCK": "rgba(255, 0, 0, 0.3)",
+                    "STIM_RECOVER": "rgba(0, 255, 200, 0.2)",
+                    "CHAOS_INSTRUCT": "rgba(100, 100, 100, 0.2)",
+                    "CHAOS_BASE": "rgba(0, 255, 100, 0.1)",
+                    "CHAOS_ACTIVE": "rgba(255, 0, 0, 0.2)",
+                    "CHAOS_BREAK": "rgba(0, 200, 255, 0.2)",
+                    "VAL_POS": "rgba(0, 255, 0, 0.2)",
+                    "VAL_NEG": "rgba(255, 0, 0, 0.2)",
+                    "VAL_WASH": "rgba(0, 200, 255, 0.2)",
+                    "TRAIN_BASELINE": "rgba(100, 100, 100, 0.2)",
+                    "TRAIN_FOCUS": "rgba(255, 200, 0, 0.2)",
+                    "TRAIN_RESONANCE": "rgba(0, 255, 200, 0.2)",
+                    "ANXIETY_MARKED": "rgba(255, 255, 0, 0.5)"
+                };
+
+                uniqueLabels.forEach(label => {
+                    const color = colorMap[label] || "rgba(128, 128, 128, 0.2)";
+                    const isMomentary = label === "STIMULUS" || label === "ANXIETY_MARKED";
+                    
+                    datasets.push({
+                        type: isMomentary ? 'bar' : 'line',
+                        label: label,
+                        data: manual_label.map(l => l === label ? targetMax : null),
+                        backgroundColor: color,
+                        borderColor: 'transparent',
+                        borderWidth: 0,
+                        pointRadius: 0,
+                        barPercentage: 1.0,
+                        categoryPercentage: 1.0,
+                        barThickness: isMomentary ? 4 : 'flex',
+                        fill: isMomentary ? false : { target: 'origin', above: color },
+                        stepped: true,
+                        order: 10
+                    });
+                });
+                return datasets;
+            };
+
+            const getVal = (r, key) => (r[key] !== undefined ? r[key] : 0);
+            const avg_delta = cleanData.map(r => (getVal(r,'L_delta') + getVal(r,'R_delta'))/2);
+            const avg_theta = cleanData.map(r => (getVal(r,'L_theta') + getVal(r,'R_theta'))/2);
+            const avg_alpha = cleanData.map(r => (getVal(r,'L_alpha') + getVal(r,'R_alpha'))/2);
+            const avg_beta  = cleanData.map(r => (getVal(r,'L_beta') + getVal(r,'R_beta'))/2);
+            const avg_gamma = cleanData.map(r => (getVal(r,'L_gamma') + getVal(r,'R_gamma'))/2);
+            const l_alpha = cleanData.map(r => getVal(r, 'L_alpha'));
+            const r_alpha = cleanData.map(r => getVal(r, 'R_alpha'));
+            const l_beta = cleanData.map(r => getVal(r, 'L_beta'));
+            const r_beta = cleanData.map(r => getVal(r, 'R_beta'));
+
+            const valence = cleanData.map(r => r.valence || r.valence_x_raw || 0);
+            const arousal = cleanData.map(r => r.arousal || r.arousal_y_raw || 0);
+            
+            const zoneMap = { "NEUTRAL": 0, "DETACHMENT": 1, "FLOW": 2, "VIGILANCE": 3, "ENGAGEMENT": 4 };
+            const zonesNumeric = cleanData.map(r => zoneMap[r.zone] || zoneMap[r.zone_guess] || 0);
+
+            // --- AX MINUTE-TO-MINUTE BUCKETING ---
+            const minuteBuckets = [];
+            const maxTimeSec = Math.ceil(Math.max(...cleanData.map(r => ((new Date(r.timestamp).getTime() - startTime) / 1000))));
+            const nullRBetaLin = Math.pow(10, globalRBetaNull);
+            
+            for(let i=0; i<maxTimeSec; i+=60) {
+                const bucketData = cleanData.filter(r => {
+                    const t = ((new Date(r.timestamp).getTime() - startTime) / 1000);
+                    return t >= i && t < i+60;
+                });
+                if(bucketData.length > 0) {
+                    const avgAx = bucketData.reduce((sum, r) => {
+                        const rawAx = r.raw_ax !== undefined ? r.raw_ax : ((getVal(r, 'R_alpha') * -1) - (getVal(r, 'L_alpha') * -1));
+                        return sum + (rawAx - globalAxNull);
+                    }, 0) / bucketData.length;
+
+                    const avgAxx = bucketData.reduce((sum, r) => {
+                        const rawAx = r.raw_ax !== undefined ? r.raw_ax : ((getVal(r, 'R_alpha') * -1) - (getVal(r, 'L_alpha') * -1));
+                        const liveRBetaLin = Math.pow(10, (r.R_beta !== undefined ? r.R_beta : 0));
+                        const cogMult = nullRBetaLin > 0 ? (liveRBetaLin / nullRBetaLin) : 1.0;
+                        const somMult = r.rmssd > 0 ? (globalHrvNull / r.rmssd) : 1.0;
+                        const rawAxx = rawAx * cogMult * somMult;
+                        return sum + rawAxx; 
+                    }, 0) / bucketData.length;
+                    
+                    const hasAnxietyTag = bucketData.some(r => r.manual_label === 'ANXIETY_MARKED');
+                    const realTimeStr = new Date(bucketData[0].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    
+                    minuteBuckets.push({
+                        minute: Math.floor(i/60) + 1,
+                        realTime: realTimeStr,
+                        ax: avgAx,
+                        axx: avgAxx,
+                        anxietyMarker: hasAnxietyTag ? avgAxx : null
+                    });
+                }
+            }
+
+            const zoomPluginOptions = {
+                zoom: {
+                    pan: { enabled: true, mode: 'x' },
+                    zoom: { 
+                        wheel: { enabled: true }, 
+                        pinch: { enabled: true }, 
+                        mode: 'x',
+                        drag: { enabled: true, backgroundColor: 'rgba(255,255,255,0.1)' },
+                        onZoomComplete: function({chart}) {
+                            const scale = chart.scales.x;
+                            const minVal = scale.min;
+                            const maxVal = scale.max;
+                            const startIdx = Math.max(0, Math.floor(minVal));
+                            const endIdx = Math.min(globalData.length - 1, Math.ceil(maxVal));
+                            if (endIdx > startIdx) {
+                                calculateStats(globalData.slice(startIdx, endIdx + 1));
+                            }
+                        }
+                    }
+                }
+            };
+
+            const commonOptions = {
+                responsive: true, 
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: { x: { display: true, grid: { color: '#222' }, ticks: { color: '#666' } } },
+                plugins: { zoom: zoomPluginOptions.zoom, legend: { labels: { color: '#aaa', font: {size: 10} } } }
+            };
+
+            // --- CHART 0: AX MINUTE SCORE ---
+            const ctxAx = document.getElementById('axMinuteChart').getContext('2d');
+            charts.push(new Chart(ctxAx, {
+                type: 'line',
+                data: {
+                    labels: minuteBuckets.map(b => timeMode === 'real' ? b.realTime : `Min ${b.minute}`),
+                    datasets: [
+                        { type: 'line', label: 'AXX Score (Composite)', data: minuteBuckets.map(b => b.axx), borderColor: '#ff4444', borderWidth: 2, borderDash: [5, 5], pointRadius: 3, order: 2 },
+                        { type: 'line', label: 'AX Score (Direction)', data: minuteBuckets.map(b => b.ax), borderColor: '#3498db', borderWidth: 2, pointRadius: 3, order: 3 },
+                        { type: 'scatter', label: 'Subjective Anxiety Marker', data: minuteBuckets.map((b, i) => b.anxietyMarker !== null ? b.anxietyMarker : null), backgroundColor: '#ffff00', pointStyle: 'triangle', radius: 10, order: 1 }
+                    ]
+                },
+                options: {
+                    ...commonOptions,
+                    scales: { y: { display: true, grid: { color: '#222' } }, x: { grid: { color: '#222' } } }
+                }
+            }));
+
+            // --- CHART 1: BETA LOAD (NEW) ---
+            const ctxBeta = document.getElementById('betaChart').getContext('2d');
+            const maxBeta = Math.max(...l_beta, ...r_beta);
+            charts.push(new Chart(ctxBeta, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: 'Left Beta (Logic/Detail)', data: l_beta, borderColor: '#0088ff', borderWidth: 2, pointRadius: 0, order: 2 },
+                        { label: 'Right Beta (Stress/Global)', data: r_beta, borderColor: '#ff4444', borderWidth: 2, pointRadius: 0, order: 1 },
+                        ...getPhaseDatasets(maxBeta)
+                    ]
+                },
+                options: {
+                    ...commonOptions,
+                    scales: { x: { display: true, ticks: { color: '#666', autoSkip: true, maxTicksLimit: 20 } }, y: { display: true, grid: { color: '#222' } } }
+                }
+            }));
+
+            // --- CHART 2: ZONES ---
+            const ctxZone = document.getElementById('zoneChart').getContext('2d');
+            charts.push(new Chart(ctxZone, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Emotional State', data: zonesNumeric, borderColor: '#ffffff', borderWidth: 2, stepped: true, pointRadius: 0,
+                            fill: { target: 'origin', above: 'rgba(255, 255, 255, 0.05)' }, order: 1
+                        },
+                        ...getPhaseDatasets(4.5)
+                    ]
+                },
+                options: {
+                    ...commonOptions,
+                    scales: {
+                        x: { display: true, ticks: { color: '#666', autoSkip: true, maxTicksLimit: 20 } },
+                        y: { min: 0, max: 4.5, ticks: { callback: function(val) { return ["NEUTRAL", "DETACHMENT", "FLOW", "VIGILANCE", "ENGAGEMENT"][val] || ""; }, color: "#888", font: { weight: 'bold', size: 10 } }, grid: { color: '#222' } }
+                    }
+                }
+            }));
+
+            // --- CHART 3: CARDIAC AUDIT ---
+            const ctxCard = document.getElementById('cardiacChart').getContext('2d');
+            const maxHR = Math.max(...hr) + 10;
+            charts.push(new Chart(ctxCard, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: 'Heart Rate', data: hr, borderColor: '#ff4444', borderWidth: 1, pointRadius: 0, yAxisID: 'y', order: 2 },
+                        { label: 'HRV (Actual)', data: rmssd, borderColor: '#00ccff', borderWidth: 2, pointRadius: 0, yAxisID: 'y1', order: 1 },
+                        { label: 'Baseline Target', data: base_hrv, borderColor: '#ffff00', borderWidth: 2, borderDash: [5,5], pointRadius: 0, yAxisID: 'y1', order: 3 },
+                        { label: 'Sensor Source', data: hr_source, borderColor: '#666', backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, stepped: true, pointRadius: 0, fill: true, yAxisID: 'ySrc', order: 4 },
+                        ...getPhaseDatasets(maxHR).map(d => ({ ...d, yAxisID: 'y' }))
+                    ]
+                },
+                options: {
+                    ...commonOptions,
+                    scales: {
+                        x: { display: true, ticks: { color: '#666', autoSkip: true, maxTicksLimit: 20 } },
+                        y: { type: 'linear', display: true, position: 'left', grid: { color: '#222' } },
+                        y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false } },
+                        ySrc: { display: false, min: 0, max: 5 }
+                    }
+                }
+            }));
+
+            // --- CHART 4: FULL SPECTRUM ---
+            const ctxSpec = document.getElementById('spectrumChart').getContext('2d');
+            const maxSpec = Math.max(...avg_delta, ...avg_gamma); 
+            charts.push(new Chart(ctxSpec, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: 'Delta', data: avg_delta, borderColor: '#ffcc00', borderWidth: 1, pointRadius: 0 },
+                        { label: 'Theta', data: avg_theta, borderColor: '#9b59b6', borderWidth: 1, pointRadius: 0 },
+                        { label: 'Alpha', data: avg_alpha, borderColor: '#2ecc71', borderWidth: 2, pointRadius: 0 }, 
+                        { label: 'Beta', data: avg_beta, borderColor: '#3498db', borderWidth: 1, pointRadius: 0 },
+                        { label: 'Gamma', data: avg_gamma, borderColor: '#e74c3c', borderWidth: 1, pointRadius: 0 },
+                        ...getPhaseDatasets(maxSpec)
+                    ]
+                },
+                options: {
+                    ...commonOptions,
+                    scales: { x: { display: true, ticks: { color: '#666', autoSkip: true, maxTicksLimit: 20 } }, y: { display: true, grid: { color: '#222' } } }
+                }
+            }));
+
+            // --- CHART 5: ARTIFACT & FLOW AUDIT ---
+            const ctxArt = document.getElementById('artifactChart').getContext('2d');
+            charts.push(new Chart(ctxArt, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: 'Delta', data: avg_delta, borderColor: '#ffff00', borderWidth: 1, pointRadius: 0, fill: true, backgroundColor: 'rgba(255,255,0,0.1)' },
+                        { label: 'Gamma', data: avg_gamma, borderColor: '#ff0000', borderWidth: 1, pointRadius: 0 },
+                        ...getPhaseDatasets(maxSpec)
+                    ]
+                },
+                options: {
+                    ...commonOptions,
+                    scales: { x: { display: true, ticks: { color: '#666', autoSkip: true, maxTicksLimit: 20 } }, y: { display: true, grid: { color: '#222' } } }
+                }
+            }));
+
+            // --- CHART 6: BRAIN ASYMMETRY ---
+            const ctxBrain = document.getElementById('brainChart').getContext('2d');
+            charts.push(new Chart(ctxBrain, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: 'L-Alpha', data: l_alpha, borderColor: '#ff00ff', borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
+                        { label: 'R-Alpha', data: r_alpha, borderColor: '#00ff9d', borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
+                        { label: 'Algorithm Weight', data: brain_weight, borderColor: '#666', borderDash:[2,2], borderWidth: 1, pointRadius: 0, yAxisID: 'yWeight' },
+                        ...getPhaseDatasets(1.0).map(d => ({ ...d, yAxisID: 'y' }))
+                    ]
+                },
+                options: {
+                    ...commonOptions,
+                    scales: {
+                        x: { display: true, ticks: { color: '#666', autoSkip: true, maxTicksLimit: 20 } },
+                        y: { display: true, grid: { color: '#222' } },
+                        yWeight: { display: true, position: 'right', min: 0, max: 1, grid: { drawOnChartArea: false } }
+                    }
+                }
+            }));
+
+            // --- CHART 7: VECTORS ---
+            const ctxVec = document.getElementById('vectorChart').getContext('2d');
+            charts.push(new Chart(ctxVec, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: 'Valence', data: valence, borderColor: '#ffff00', borderWidth: 1, pointRadius:0 },
+                        { label: 'Arousal', data: arousal, borderColor: '#555', borderWidth: 1, borderDash:[2,2], pointRadius:0 },
+                        ...getPhaseDatasets(1.0)
+                    ]
+                },
+                options: {
+                    ...commonOptions,
+                    scales: { x: { display: true, ticks: { color: '#666', autoSkip: true, maxTicksLimit: 20 } }, y: { min: -1, max: 1, grid: { color: '#222' } } }
+                }
+            }));
+        }
+    </script>
+</body>
+</html>

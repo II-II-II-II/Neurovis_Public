@@ -1,0 +1,809 @@
+\<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>NeuroVis | Continuous Longitudinal Forensics</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script> 
+    
+    <style>
+        body { margin: 0; background: #050505; color: #e0e0e0; font-family: 'Courier New', monospace; height: 100vh; display: flex; overflow: hidden; }
+        
+        /* SIDEBAR */
+        .sidebar { width: 360px; background: #0a0a0a; border-right: 1px solid #222; display: flex; flex-direction: column; z-index: 10; box-shadow: 2px 0 15px rgba(0,0,0,0.8); }
+        .sidebar-header { padding: 20px; border-bottom: 1px solid #222; text-align: center; }
+        .header-title { font-weight: bold; color: #00ccff; letter-spacing: 2px; font-size: 14px; margin-bottom: 15px; }
+        .session-list { flex: 1; overflow-y: auto; padding: 10px; }
+        .session-card { background: #111; border: 1px solid #333; padding: 12px; margin-bottom: 8px; border-radius: 6px; cursor: pointer; transition: 0.2s; position: relative; border-left: 4px solid #333; }
+        .session-card:hover { border-color: #00ccff; background: #1a1a1a; }
+        .session-card.active { border-color: #00ffcc; background: #152222; border-left-color: #00ffcc; box-shadow: 0 0 10px rgba(0, 255, 204, 0.1); }
+        .session-tag { font-size: 14px; font-weight: bold; color: #fff; margin-bottom: 4px; }
+        .session-time { font-size: 10px; color: #888; }
+        .session-metrics { display: flex; flex-direction: column; margin-top: 8px; font-size: 9px; color: #aaa; border-top: 1px dashed #333; padding-top: 6px; gap: 4px; }
+        .metric-row { display: flex; justify-content: space-between; }
+        
+        .tag-toggle { background: #111; border: 1px solid #444; color: #888; padding: 4px 8px; border-radius: 4px; font-size: 9px; cursor: pointer; transition: 0.2s; user-select: none; flex-grow: 1; text-align: center; font-weight: bold; }
+        .tag-toggle:hover { background: #222; border-color: #666; }
+        .tag-toggle.active { border-color: #00ffcc; color: #00ffcc; background: rgba(0, 255, 204, 0.1); box-shadow: 0 0 8px rgba(0, 255, 204, 0.2); }
+
+        /* MAIN DASHBOARD */
+        .main-panel { flex: 1; padding: 20px; display: flex; flex-direction: column; overflow-y: auto; background: #080808; position: relative; }
+        .section-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1px solid #333; padding-bottom: 5px; margin-bottom: 15px; margin-top: 10px; }
+        .section-title { font-size: 16px; font-weight: bold; color: #fff; letter-spacing: 1px; margin: 0; }
+        
+        /* BUTTONS */
+        .btn { background: #111; border: 1px solid #444; color: #fff; padding: 8px 12px; font-family: inherit; font-weight: bold; cursor: pointer; text-transform: uppercase; font-size: 10px; transition: 0.2s; border-radius: 4px; }
+        .btn:hover { background: #222; border-color: #888; }
+        
+        /* KPIs & CUSTOM TOOLTIPS */
+        .kpi-row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+        .kpi-card { position: relative; flex: 1; min-width: 120px; background: #111; border: 1px solid #222; border-radius: 8px; padding: 12px; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.5); transition: 0.3s; cursor: help; }
+        .kpi-title { font-size: 10px; color: #666; margin-bottom: 8px; letter-spacing: 1px; font-weight: bold; }
+        .kpi-value { font-size: 22px; font-weight: bold; color: #eee; }
+        .kpi-sub { font-size: 9px; color: #00ccff; margin-top: 5px; text-transform: uppercase; }
+        
+        /* THE NEW CHART-STYLE CSS TOOLTIPS */
+        .custom-tooltip { position: absolute; bottom: 110%; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.9); color: #ccc; padding: 12px; border-radius: 6px; font-size: 11px; font-family: 'Courier New', monospace; width: 200px; text-align: left; z-index: 1000; opacity: 0; visibility: hidden; transition: opacity 0.2s ease, bottom 0.2s ease; pointer-events: none; border: 1px solid #333; box-shadow: 0 4px 10px rgba(0,0,0,0.8); line-height: 1.4; }
+        .custom-tooltip::after { content: ''; position: absolute; top: 100%; left: 50%; margin-left: -6px; border-width: 6px; border-style: solid; border-color: rgba(0,0,0,0.9) transparent transparent transparent; }
+        .kpi-card:hover .custom-tooltip { opacity: 1; visibility: visible; bottom: 115%; }
+
+        /* TREND INDICATORS */
+        .trend-indicator { display: inline-block; font-size: 9px; font-weight: bold; padding: 2px 5px; border-radius: 4px; margin-top: 6px; }
+        .trend-good { background: rgba(0, 255, 204, 0.15); color: #00ffcc; border: 1px solid rgba(0,255,204,0.3); }
+        .trend-bad { background: rgba(255, 68, 68, 0.15); color: #ff4444; border: 1px solid rgba(255,68,68,0.3); }
+        .trend-neutral { background: rgba(136, 136, 136, 0.15); color: #888; border: 1px solid rgba(136,136,136,0.3); }
+
+        /* MACRO GRID */
+        .macro-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 30px; }
+        .chart-box { background: #111; border: 1px solid #222; border-radius: 8px; padding: 15px; position: relative; box-shadow: 0 4px 10px rgba(0,0,0,0.5); display: flex; flex-direction: column; height: 260px; }
+        
+        /* MICRO REPLAY */
+        .micro-replay { height: 400px; width: 100%; margin-bottom: 40px; }
+        .micro-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px dashed #333; padding-bottom: 10px; }
+        .micro-title { font-size: 14px; font-weight: bold; color: #00ffcc; margin: 0; }
+
+        /* OVERLAYS & MODALS */
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 999; display: flex; justify-content: center; align-items: center; }
+        .hidden { display: none !important; }
+        
+        .modal-box { background: #111; border: 1px solid #333; border-radius: 8px; padding: 30px; max-width: 500px; width: 90%; }
+        .modal-title { font-size: 18px; color: #0088ff; font-weight: bold; margin-bottom: 15px; letter-spacing: 1px; }
+        .modal-text { font-size: 12px; color: #aaa; line-height: 1.6; margin-bottom: 20px; }
+        .mist-input { background: #050505; border: 1px solid #444; color: #fff; padding: 12px; width: 100%; font-family: inherit; margin-bottom: 20px; border-radius: 4px; box-sizing: border-box; }
+        
+        .ai-reading-panel { position: absolute; top: 0; right: -100%; width: 50%; height: 100%; background: #0a0a0a; border-left: 1px solid #333; z-index: 50; transition: right 0.4s ease; display: flex; flex-direction: column; box-shadow: -5px 0 20px rgba(0,0,0,0.8); }
+        .ai-reading-panel.open { right: 0; }
+        .ai-header { padding: 20px; border-bottom: 1px solid #222; display: flex; justify-content: space-between; align-items: center; background: #111; }
+        .ai-content { flex: 1; padding: 30px; overflow-y: auto; font-size: 13px; line-height: 1.6; color: #ccc; }
+        .ai-content h1, .ai-content h2, .ai-content h3 { color: #0088ff; margin-top: 0; }
+        .ai-content strong { color: #fff; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #050505; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+    </style>
+</head>
+<body>
+
+    <div id="privacy-modal" class="overlay hidden">
+        <div class="modal-box">
+            <div class="modal-title"> DATA PRIVACY & AI SECURITY</div>
+            <div class="modal-text">
+                NeuroVis is a local-first application. Your raw telemetry data never touches our servers. 
+                <br><br>
+                To utilize the AI Insight Engine, NeuroVis communicates directly with Google's Gemini API from your browser. 
+                <br><br>
+                <strong>Data Masking Protocol:</strong><br>
+                When you request an analysis, NeuroVis strictly mathematically de-identifies the payload. We only transmit:<br>
+                • Session duration & classification tag<br>
+                • Anonymized 30-second biometric averages (HRV, FAA, Beta, AXX)<br>
+                • Absolutely ZERO Personal Identifiable Information (PII) or raw EEG waveforms are sent.
+                <br><br>
+                <strong>Bring Your Own Key (BYOK):</strong><br>
+                To proceed, please enter your personal Gemini API Key. This key is stored securely in your browser's local cache and is never transmitted to us.
+            </div>
+            <input type="password" id="api-key-input" class="mist-input" placeholder="Paste Gemini API Key here (AIzaSy...)">
+            <div style="display: flex; gap: 10px;">
+                <button class="btn" style="flex: 1; border-color: #555; color: #888;" onclick="closePrivacyModal()">CANCEL</button>
+                <button class="btn" style="flex: 1; border-color: #0088ff; color: #0088ff;" onclick="saveApiKey()">I AGREE — SAVE KEY</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="ai-panel" class="ai-reading-panel">
+        <div class="ai-header">
+            <div style="font-weight: bold; color: #0088ff; letter-spacing: 1px;"> CLINICAL INSIGHT ENGINE</div>
+            <button class="btn" style="border: none; background: transparent; font-size: 16px; padding: 0; color: #888;" onclick="closeAIPanel()">✖</button>
+        </div>
+        <div id="ai-content" class="ai-content"></div>
+    </div>
+
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <div class="header-title">CONTINUOUS FORENSICS</div>
+            <input type="file" id="csv-import-input" accept=".csv" multiple style="display:none;" onchange="handleCSVImport(event)">
+            <button class="btn" style="width: 100%; margin-bottom: 8px; border-color: #00ffcc; color: #00ffcc;" onclick="document.getElementById('csv-import-input').click()">+ BATCH IMPORT CSVs</button>
+            <button class="btn" style="width: 100%; margin-bottom: 8px; border-color: #aa00ff; color: #aa00ff;" onclick="bulkExportDatabase()">⬇ BACKUP DATABASE</button>
+            
+            <input type="file" id="json-restore-input" accept=".json" style="display:none;" onchange="restoreDatabase(event)">
+            <button class="btn" style="width: 100%; border-color: #ffaa00; color: #ffaa00;" onclick="document.getElementById('json-restore-input').click()">⬆ RESTORE JSON DB</button>
+            
+            <div id="tag-filter-container" style="margin-top: 15px; border-top: 1px solid #222; padding-top: 10px; display: none;">
+                <div style="font-size: 10px; color: #666; margin-bottom: 8px; font-weight: bold; text-align: left; display: flex; justify-content: space-between;">
+                    <span>FILTER BY TAG</span>
+                    <span style="cursor: pointer; color: #00ccff;" onclick="toggleAllTags()">TOGGLE ALL</span>
+                </div>
+                <div id="tag-toggles" style="display: flex; flex-wrap: wrap; gap: 5px;"></div>
+            </div>
+        </div>
+        <div class="session-list" id="session-list">
+            <div style="text-align:center; color:#555; margin-top:50px; font-size:12px;">DATABASE EMPTY</div>
+        </div>
+    </div>
+
+    <div class="main-panel">
+        
+        <div class="section-header">
+            <h2 class="section-title">FILTERED ADAPTATION METRICS (WITH 7-DAY DELTAS)</h2>
+        </div>
+        <div class="kpi-row">
+            <div class="kpi-card" id="card-days">
+                <div class="custom-tooltip"><span style="color:#00ffcc; font-weight:bold;">TOTAL ACTIVE DAYS</span><br>Total number of unique calendar days containing recorded sessions within your filter.</div>
+                <div class="kpi-title">TOTAL ACTIVE DAYS</div>
+                <div class="kpi-value" id="kpi-days">0</div>
+                <div class="kpi-sub">UNIQUE DATES LOGGED</div>
+            </div>
+            <div class="kpi-card" id="card-time">
+                <div class="custom-tooltip"><span style="color:#00ffcc; font-weight:bold;">TOTAL FLIGHT TIME</span><br>Total cumulative duration of all recorded sessions matching the current filters.</div>
+                <div class="kpi-title">TOTAL FLIGHT TIME</div>
+                <div class="kpi-value" id="kpi-time">0h 0m</div>
+                <div class="kpi-sub">ACROSS SELECTED TAGS</div>
+            </div>
+            <div class="kpi-card" id="card-app">
+                <div class="custom-tooltip"><span style="color:#00ffcc; font-weight:bold;">GLOBAL APPROACH %</span><br>Percentage of time where Frontal Alpha Asymmetry (FAA) was positive, indicating an approach-oriented or calm state.</div>
+                <div class="kpi-title">GLOBAL APPROACH %</div>
+                <div class="kpi-value" id="kpi-approach" style="color:#00ffcc;">0%</div>
+                <div id="kpi-approach-trend"></div>
+            </div>
+            <div class="kpi-card" id="card-hrv">
+                <div class="custom-tooltip"><span style="color:#00ffcc; font-weight:bold;">AVG VAGAL TONE (HRV)</span><br>Average rMSSD Heart Rate Variability. Higher values generally indicate better nervous system recovery and resilience.</div>
+                <div class="kpi-title">AVG VAGAL TONE (HRV)</div>
+                <div class="kpi-value" id="kpi-hrv" style="color:#00ffcc;">0</div>
+                <div id="kpi-hrv-trend"></div>
+            </div>
+            <div class="kpi-card" id="card-axx">
+                <div class="custom-tooltip"><span style="color:#ffcc00; font-weight:bold;">AVG AXX LOAD</span><br>Cognitive Anxiety Index. A composite metric of brainwave activity indicating mental stress or cognitive load.</div>
+                <div class="kpi-title">AVG AXX LOAD</div>
+                <div class="kpi-value" id="kpi-axx" style="color:#ffcc00;">0.00</div>
+                <div id="kpi-axx-trend"></div>
+            </div>
+            <div class="kpi-card" id="card-ax">
+                <div class="custom-tooltip"><span style="color:#ff8800; font-weight:bold;">AVG AX LOAD</span><br>Somatic Anxiety Index. A metric tracking physical/bodily arousal and stress.</div>
+                <div class="kpi-title">AVG AX LOAD</div>
+                <div class="kpi-value" id="kpi-ax" style="color:#ff8800;">0.00</div>
+                <div id="kpi-ax-trend"></div>
+            </div>
+            <div class="kpi-card" id="card-rbeta">
+                <div class="custom-tooltip"><span style="color:#ff4444; font-weight:bold;">AVG RIGHT BETA</span><br>Average Beta wave power in the right hemisphere. Often correlated with active stress, hyper-vigilance, or negative emotion.</div>
+                <div class="kpi-title">AVG RIGHT BETA</div>
+                <div class="kpi-value" id="kpi-rbeta" style="color:#ff4444;">0.00</div>
+                <div id="kpi-rbeta-trend"></div>
+            </div>
+        </div>
+
+        <div class="section-header">
+            <h2 class="section-title">CONTINUOUS MACRO TIMELINE (WITH 7-DAY MOVING AVERAGES)</h2>
+            <button class="btn" onclick="resetAllZooms()">⟲ RESET ZOOM</button>
+        </div>
+        <div class="macro-grid">
+            <div class="chart-box"><canvas id="trendHrv"></canvas></div>
+            <div class="chart-box"><canvas id="trendFaa"></canvas></div>
+            <div class="chart-box"><canvas id="trendAxx"></canvas></div>
+            <div class="chart-box"><canvas id="trendBeta"></canvas></div>
+        </div>
+
+        <div class="section-header">
+            <h2 class="section-title">MICRO FORENSICS: ISOLATED SESSION VIEW</h2>
+        </div>
+        <div class="chart-box micro-replay">
+            <div class="micro-toolbar">
+                <div class="micro-title" id="micro-title">CLICK A SESSION FROM THE SIDEBAR TO ISOLATE</div>
+                <div id="micro-actions" style="display: none; gap: 8px;">
+                    <button class="btn" style="border-color: #00ffcc; color: #00ffcc;" onclick="retagCurrentSession()"> RETAG</button>
+                    <button class="btn" style="border-color: #0088ff; color: #0088ff;" onclick="requestAIAnalysis()"> ANALYZE WITH AI</button>
+                    <button class="btn" style="border-color: #ffaa00; color: #ffaa00;" onclick="openForensics()"> FORENSICS.HTML</button>
+                    <button class="btn" style="border-color: #ff4444; color: #ff4444;" onclick="deleteCurrentSession()"> PURGE</button>
+                </div>
+            </div>
+            <div style="flex: 1; position: relative;">
+                <canvas id="replayChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // DATABASE & STATE ENGINE
+        // ==========================================
+        let db;
+        let globalSessionsRaw = []; 
+        let globalChunksRaw = []; 
+        let globalChunksMap = {}; 
+        
+        let allKnownTags = new Set();
+        let activeTags = new Set();
+        let filteredSessions = [];
+        let filteredChunks = [];
+        let charts = {};
+        let activeSessionId = null;
+        let activeSessionTag = null;
+
+        Chart.defaults.color = '#888';
+        Chart.defaults.borderColor = '#222';
+        Chart.defaults.font.family = "'Courier New', monospace";
+
+        const dbRequest = indexedDB.open("NeurovisDB", 8); 
+        dbRequest.onerror = (e) => console.error("Database error:", e);
+        dbRequest.onblocked = (e) => alert(" DATABASE LOCKED: Please close your main Neurovis tab. Once closed, refresh this page.");
+        
+        dbRequest.onupgradeneeded = (event) => {
+            const tempDb = event.target.result;
+            if (!tempDb.objectStoreNames.contains('sessions')) {
+                const store = tempDb.createObjectStore("sessions", { keyPath: "session_id" });
+                store.createIndex("timestamp", "timestamp", { unique: false });
+            } else {
+                const store = event.target.transaction.objectStore("sessions");
+                if (!store.indexNames.contains("timestamp")) store.createIndex("timestamp", "timestamp", { unique: false });
+            }
+            if (!tempDb.objectStoreNames.contains('climate_chunks')) tempDb.createObjectStore("climate_chunks", { keyPath: "session_id" });
+            if (!tempDb.objectStoreNames.contains('raw_data')) tempDb.createObjectStore("raw_data", { keyPath: "session_id" });
+            if (!tempDb.objectStoreNames.contains('tags')) tempDb.createObjectStore("tags", { keyPath: "name" });
+        };
+
+        dbRequest.onsuccess = (e) => {
+            db = e.target.result;
+            initCharts();
+            loadGlobalData();
+        };
+
+        // ==========================================
+        // MATH HELPERS (7-DAY M.A. & TRENDS)
+        // ==========================================
+        function calculateMovingAverage(chunks, key, daysWindow) {
+            const msWindow = daysWindow * 24 * 60 * 60 * 1000;
+            return chunks.map((c, i) => {
+                let sum = 0; let count = 0;
+                for (let j = i; j >= 0; j--) {
+                    if (c.timeObj - chunks[j].timeObj <= msWindow) { sum += (chunks[j][key] || 0); count++; } 
+                    else break;
+                }
+                return count > 0 ? (sum / count) : 0;
+            });
+        }
+
+        function buildTrendPill(oldVal, newVal, invertColors = false) {
+            if (!oldVal || oldVal === 0) return `<div class="trend-indicator trend-neutral">-- (7d)</div>`;
+            const pctChange = ((newVal - oldVal) / Math.abs(oldVal)) * 100;
+            const sign = pctChange > 0 ? '+' : '';
+            let colorClass = 'trend-neutral';
+            
+            if (pctChange > 0) colorClass = invertColors ? 'trend-bad' : 'trend-good';
+            if (pctChange < 0) colorClass = invertColors ? 'trend-good' : 'trend-bad';
+            if (Math.abs(pctChange) < 0.5) colorClass = 'trend-neutral';
+
+            return `<div class="trend-indicator ${colorClass}">${sign}${pctChange.toFixed(1)}% (7d)</div>`;
+        }
+
+        // ==========================================
+        // ZOOM CONTROLS & TOOLTIP CONFIG
+        // ==========================================
+        const zoomConfig = { pan: { enabled: true, mode: 'x' }, zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' } };
+        function resetAllZooms() { Object.values(charts).forEach(c => c.resetZoom()); }
+
+        const macroTooltipConfig = {
+            backgroundColor: 'rgba(0,0,0,0.9)', titleFont: { size: 12, family: "'Courier New', monospace" }, bodyFont: { size: 11 },
+            callbacks: { title: function(context) { const idx = context[0].dataIndex; return filteredChunks[idx] ? `${filteredChunks[idx].fullDateStr} | ${filteredChunks[idx].tag}` : context[0].label; } }
+        };
+
+        // ==========================================
+        // INITIALIZE CHARTS 
+        // ==========================================
+        function initCharts() {
+            // ADDED: interaction mode 'index' to give the macro charts the same data-snapping feel as the reports below
+            const commonOptions = { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { ticks: { maxTicksLimit: 12, autoSkip: true } } }, plugins: { zoom: zoomConfig, tooltip: macroTooltipConfig, legend: { position: 'bottom', labels: { boxWidth: 10, font: {size: 10} } } } };
+
+            charts.hrv = new Chart(document.getElementById('trendHrv').getContext('2d'), { type: 'line', data: { labels: [], datasets: [] }, options: { ...commonOptions, plugins: { ...commonOptions.plugins, title: { display: true, text: 'VAGAL TONE (HRV FLUCTUATIONS)', color: '#fff' } }, scales: { ...commonOptions.scales, y: { title: {display: true, text: 'HRV (rMSSD)', font: {size: 9}} } } } });
+            charts.faa = new Chart(document.getElementById('trendFaa').getContext('2d'), { type: 'bar', data: { labels: [], datasets: [] }, options: { ...commonOptions, plugins: { ...commonOptions.plugins, title: { display: true, text: 'EMOTIONAL POLARITY (FAA)', color: '#fff' } }, scales: { ...commonOptions.scales, y: { title: {display: true, text: 'FAA Score', font: {size: 9}} } } } });
+            charts.axx = new Chart(document.getElementById('trendAxx').getContext('2d'), { type: 'line', data: { labels: [], datasets: [] }, options: { ...commonOptions, plugins: { ...commonOptions.plugins, title: { display: true, text: 'ANXIETY & COGNITIVE LOAD', color: '#fff' } }, scales: { ...commonOptions.scales, y: { title: {display: true, text: 'Index Score', font: {size: 9}} } } } });
+            charts.beta = new Chart(document.getElementById('trendBeta').getContext('2d'), { type: 'line', data: { labels: [], datasets: [] }, options: { ...commonOptions, plugins: { ...commonOptions.plugins, title: { display: true, text: 'COGNITIVE ASYMMETRY (L/R BETA)', color: '#fff' } }, scales: { ...commonOptions.scales, y: { title: {display: true, text: 'Beta Power', font: {size: 9}} } } } });
+            charts.replay = new Chart(document.getElementById('replayChart').getContext('2d'), { type: 'line', data: { labels: [], datasets: [] }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: { backgroundColor: 'rgba(0,0,0,0.8)' }, legend: { position: 'bottom' } }, scales: { x: { ticks: { maxTicksLimit: 15 } }, y: { position: 'left', title: {display: true, text: 'HRV / Heart Rate'} }, y1: { position: 'right', grid: {drawOnChartArea: false}, title: {display: true, text: 'Emotion Index'} } } } });
+        }
+
+        // ==========================================
+        // 1. FETCH DATA 
+        // ==========================================
+        function loadGlobalData() {
+            if (!db) return; 
+            db.transaction(["sessions"], "readonly").objectStore("sessions").index("timestamp").getAll().onsuccess = (e) => {
+                globalSessionsRaw = e.target.result; 
+                if (globalSessionsRaw.length === 0) { document.getElementById('tag-filter-container').style.display = 'none'; return document.getElementById('session-list').innerHTML = '<div style="text-align:center; color:#555; margin-top:50px;">DATABASE EMPTY</div>'; }
+
+                db.transaction(["climate_chunks"], "readonly").objectStore("climate_chunks").getAll().onsuccess = (ec) => {
+                    const allChunksData = ec.target.result;
+                    globalChunksMap = {};
+                    allChunksData.forEach(cd => globalChunksMap[cd.session_id] = cd.chunks);
+
+                    globalChunksRaw = [];
+                    const currentUniqueTags = new Set();
+
+                    globalSessionsRaw.forEach(sess => {
+                        const tag = sess.tag || "UNTAGGED";
+                        currentUniqueTags.add(tag);
+                        const sessTime = new Date(sess.timestamp);
+                        const sessionChunks = globalChunksMap[sess.session_id] || [];
+                        
+                        sessionChunks.forEach(c => {
+                            const chunkTime = new Date(sessTime.getTime() + (c.chunk_index * 30000));
+                            globalChunksRaw.push({ timeObj: chunkTime, shortDateStr: `${chunkTime.getMonth()+1}/${chunkTime.getDate()} ${chunkTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`, fullDateStr: chunkTime.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }), tag: tag, ...c });
+                        });
+                    });
+
+                    globalChunksRaw.sort((a,b) => a.timeObj - b.timeObj);
+                    currentUniqueTags.forEach(t => { if (!allKnownTags.has(t)) { activeTags.add(t); allKnownTags.add(t); } });
+                    renderTagFilters(currentUniqueTags);
+                    applyFiltersAndRender();
+                };
+            };
+        }
+
+        // ==========================================
+        // 2. TAG FILTER UI LOGIC
+        // ==========================================
+        function renderTagFilters(uniqueTags) {
+            const container = document.getElementById('tag-filter-container');
+            const toggleDiv = document.getElementById('tag-toggles');
+            container.style.display = 'block'; toggleDiv.innerHTML = '';
+            
+            Array.from(uniqueTags).sort().forEach(tag => {
+                const btn = document.createElement('div');
+                btn.className = `tag-toggle ${activeTags.has(tag) ? 'active' : ''}`; btn.innerText = tag;
+                btn.onclick = () => { if (activeTags.has(tag)) activeTags.delete(tag); else activeTags.add(tag); btn.className = `tag-toggle ${activeTags.has(tag) ? 'active' : ''}`; applyFiltersAndRender(); };
+                toggleDiv.appendChild(btn);
+            });
+        }
+
+        function toggleAllTags() { if (activeTags.size > 0) activeTags.clear(); else allKnownTags.forEach(t => activeTags.add(t)); renderTagFilters(allKnownTags); applyFiltersAndRender(); }
+
+        // ==========================================
+        // 3. APPLY FILTERS, MATH, & RENDER DASHBOARD
+        // ==========================================
+        function applyFiltersAndRender() {
+            filteredSessions = globalSessionsRaw.filter(s => activeTags.has(s.tag || "UNTAGGED"));
+            filteredChunks = globalChunksRaw.filter(c => activeTags.has(c.tag));
+
+            if (filteredSessions.length === 0) {
+                document.getElementById('session-list').innerHTML = '<div style="text-align:center; color:#ffaa00; margin-top:50px;">NO SESSIONS MATCH SELECTED TAGS</div>';
+                [charts.hrv, charts.faa, charts.axx, charts.beta].forEach(c => { c.data.labels = []; c.data.datasets = []; c.update(); });
+                return;
+            }
+
+            let totalSecs = 0, sumAxx = 0, sumAx = 0, sumRBeta = 0, appTicks = 0, faaTicks = 0, sumHrv = 0;
+            const uniqueDays = new Set();
+            let latestTimestamp = 0;
+
+            filteredSessions.forEach(sess => {
+                const s = sess.summary || {}; 
+                const ts = new Date(sess.timestamp).getTime();
+                if(ts > latestTimestamp) latestTimestamp = ts;
+
+                uniqueDays.add(new Date(sess.timestamp).toLocaleDateString());
+                totalSecs += (s.total_duration_seconds || 0); 
+                sumAxx += (s.avg_axx || 0); 
+                sumAx += (s.avg_ax || 0);
+                sumRBeta += (s.avg_r_beta || 0);
+                sumHrv += (s.avg_hrv || 0);
+                if(s.approach_pct !== undefined) { appTicks += s.approach_pct; faaTicks++; }
+            });
+
+            const overallHrv = Math.round(sumHrv / filteredSessions.length);
+            const overallAxx = (sumAxx / filteredSessions.length).toFixed(3);
+            const overallAx = (sumAx / filteredSessions.length).toFixed(3);
+            const overallRBeta = (sumRBeta / filteredSessions.length).toFixed(3);
+            const overallApp = faaTicks ? Math.round(appTicks / faaTicks) : 0;
+
+            const cutoff7d = latestTimestamp - (7 * 24 * 60 * 60 * 1000);
+            const recentSessions = filteredSessions.filter(s => new Date(s.timestamp).getTime() >= cutoff7d);
+            
+            let r_sumAxx = 0, r_sumAx = 0, r_sumRBeta = 0, r_appTicks = 0, r_faaTicks = 0, r_sumHrv = 0;
+            recentSessions.forEach(sess => {
+                const s = sess.summary || {};
+                r_sumAxx += (s.avg_axx || 0); r_sumAx += (s.avg_ax || 0); r_sumRBeta += (s.avg_r_beta || 0); r_sumHrv += (s.avg_hrv || 0);
+                if(s.approach_pct !== undefined) { r_appTicks += s.approach_pct; r_faaTicks++; }
+            });
+
+            const rHrv = recentSessions.length ? Math.round(r_sumHrv / recentSessions.length) : 0;
+            const rAxx = recentSessions.length ? (r_sumAxx / recentSessions.length) : 0;
+            const rAx = recentSessions.length ? (r_sumAx / recentSessions.length) : 0;
+            const rRBeta = recentSessions.length ? (r_sumRBeta / recentSessions.length) : 0;
+            const rApp = r_faaTicks ? Math.round(r_appTicks / r_faaTicks) : 0;
+
+            document.getElementById('kpi-days').innerText = filteredSessions.length;
+            document.getElementById('kpi-time').innerText = `${Math.floor(totalSecs / 3600)}h ${Math.floor((totalSecs % 3600) / 60)}m`;
+            
+            document.getElementById('kpi-hrv').innerText = overallHrv;
+            document.getElementById('kpi-hrv-trend').innerHTML = buildTrendPill(overallHrv, rHrv, false); 
+            
+            document.getElementById('kpi-approach').innerText = overallApp + "%";
+            document.getElementById('kpi-approach-trend').innerHTML = buildTrendPill(overallApp, rApp, false);
+            
+            document.getElementById('kpi-axx').innerText = overallAxx;
+            document.getElementById('kpi-axx-trend').innerHTML = buildTrendPill(overallAxx, rAxx, true); 
+            
+            document.getElementById('kpi-ax').innerText = overallAx;
+            document.getElementById('kpi-ax-trend').innerHTML = buildTrendPill(overallAx, rAx, true);
+
+            document.getElementById('kpi-rbeta').innerText = overallRBeta;
+            document.getElementById('kpi-rbeta-trend').innerHTML = buildTrendPill(overallRBeta, rRBeta, true);
+
+            const labels = filteredChunks.map(c => c.shortDateStr);
+            const d_hrv = filteredChunks.map(c => c.avg_hrv);
+            const d_faa = filteredChunks.map(c => c.avg_faa);
+            const d_ax = filteredChunks.map(c => c.avg_ax);
+            const d_axx = filteredChunks.map(c => c.avg_axx);
+            const d_lbeta = filteredChunks.map(c => c.avg_l_beta||0);
+            const d_rbeta = filteredChunks.map(c => c.avg_r_beta||0);
+
+            const maStyle = { borderColor: '#fff', borderWidth: 2, pointRadius: 0, tension: 0.4, borderDash: [2,2] };
+
+            charts.hrv.data = { labels: labels, datasets: [ 
+                { label: '30s HRV', data: d_hrv, borderColor: '#00ffcc', backgroundColor: 'rgba(0, 255, 204, 0.1)', fill: true, borderWidth: 1, tension: 0.3, pointRadius: 0 },
+                { label: '7-Day MA', data: calculateMovingAverage(filteredChunks, 'avg_hrv', 7), ...maStyle }
+            ]}; charts.hrv.update();
+
+            charts.faa.data = { labels: labels, datasets: [ 
+                { type: 'bar', label: '30s FAA', data: d_faa, backgroundColor: filteredChunks.map(c => c.avg_faa >= 0 ? 'rgba(0, 255, 204, 0.8)' : 'rgba(255, 170, 0, 0.8)'), barPercentage: 1.0, categoryPercentage: 1.0 },
+                { type: 'line', label: '7-Day MA', data: calculateMovingAverage(filteredChunks, 'avg_faa', 7), ...maStyle }
+            ]}; charts.faa.update();
+
+            charts.axx.data = { labels: labels, datasets: [ 
+                { label: 'Somatic AX', data: d_ax, borderColor: '#555', tension: 0.3, pointRadius: 0 }, 
+                { label: 'Cognitive AXX', data: d_axx, borderColor: '#ffcc00', backgroundColor: 'rgba(255, 204, 0, 0.1)', fill: true, tension: 0.3, pointRadius: 0 },
+                { label: '7-Day MA (AXX)', data: calculateMovingAverage(filteredChunks, 'avg_axx', 7), ...maStyle }
+            ]}; charts.axx.update();
+
+            charts.beta.data = { labels: labels, datasets: [ 
+                { label: 'Left Beta', data: d_lbeta, borderColor: '#0088ff', tension: 0.3, pointRadius: 0 }, 
+                { label: 'Right Beta', data: d_rbeta, borderColor: '#ff4444', tension: 0.3, pointRadius: 0 },
+                { label: '7-Day MA (R-Beta)', data: calculateMovingAverage(filteredChunks, 'avg_r_beta', 7), ...maStyle }
+            ]}; charts.beta.update();
+
+            buildSidebar(filteredSessions.slice().reverse());
+        }
+
+        // ==========================================
+        // SIDEBAR & ISOLATED MICRO REPLAY
+        // ==========================================
+        function buildSidebar(sessionsRev) {
+            const listEl = document.getElementById('session-list');
+            listEl.innerHTML = '';
+
+            sessionsRev.forEach((sess) => {
+                const s = sess.summary || {};
+                const d = new Date(sess.timestamp);
+                const durMin = Math.round((s.total_duration_seconds||0)/60);
+                
+                const sChunks = globalChunksMap[sess.session_id] || [];
+                const firstMinChunks = sChunks.filter(c => c.chunk_index <= 2);
+                let fm_hrv = 0, fm_axx = "0.000", fm_faa = "0.000", fm_rbeta = "0.000";
+                
+                if(firstMinChunks.length > 0) {
+                    fm_hrv = Math.round(firstMinChunks.reduce((sum, c) => sum + c.avg_hrv, 0) / firstMinChunks.length);
+                    fm_axx = (firstMinChunks.reduce((sum, c) => sum + (c.avg_axx||0), 0) / firstMinChunks.length).toFixed(3);
+                    fm_faa = (firstMinChunks.reduce((sum, c) => sum + c.avg_faa, 0) / firstMinChunks.length).toFixed(3);
+                    fm_rbeta = (firstMinChunks.reduce((sum, c) => sum + (c.avg_r_beta||0), 0) / firstMinChunks.length).toFixed(3);
+                }
+
+                const card = document.createElement('div');
+                card.className = 'session-card';
+                card.id = `card-${sess.session_id}`;
+                card.innerHTML = `
+                    <div class="session-tag" style="color: ${sess.tag === 'UNTAGGED' ? '#ffaa00' : '#fff'}">${sess.tag}</div>
+                    <div class="session-time">${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} | ${durMin} min | App: ${s.approach_pct||0}%</div>
+                    <div class="session-metrics">
+                        <div class="metric-row">
+                            <span style="color:#aaa"><b>ALL:</b></span>
+                            <span style="color:#00ffcc">HRV:${s.avg_hrv||0}</span>
+                            <span style="color:#ffcc00">AXX:${s.avg_axx||0}</span>
+                            <span style="color:${(s.avg_faa||0) >= 0 ? '#00ccff' : '#ffaa00'}">FAA:${s.avg_faa||0}</span>
+                            <span style="color:#ff4444">R-β:${s.avg_r_beta||0}</span>
+                        </div>
+                        <div class="metric-row">
+                            <span style="color:#666"><b>1M:</b></span>
+                            <span style="color:#00aa88">HRV:${fm_hrv}</span>
+                            <span style="color:#aa8800">AXX:${fm_axx}</span>
+                            <span style="color:${fm_faa >= 0 ? '#0088aa' : '#aa6600'}">FAA:${fm_faa}</span>
+                            <span style="color:#aa3333">R-β:${fm_rbeta}</span>
+                        </div>
+                    </div>
+                `;
+                card.onclick = () => { document.querySelectorAll('.session-card').forEach(c => c.classList.remove('active')); card.classList.add('active'); loadMicroData(sess); };
+                listEl.appendChild(card);
+            });
+
+            if(sessionsRev.length > 0 && !activeSessionId) { document.getElementById(`card-${sessionsRev[0].session_id}`).classList.add('active'); loadMicroData(sessionsRev[0]); }
+            else if (activeSessionId && document.getElementById(`card-${activeSessionId}`)) document.getElementById(`card-${activeSessionId}`).classList.add('active');
+        }
+
+        function loadMicroData(sess) {
+            activeSessionId = sess.session_id; activeSessionTag = sess.tag;
+            const durationMin = Math.round((sess.summary.total_duration_seconds || 0) / 60);
+            document.getElementById('micro-title').innerText = `${sess.tag} | ISOLATED VIEW | ${new Date(sess.timestamp).toLocaleDateString()} (${durationMin} mins)`;
+            document.getElementById('micro-actions').style.display = 'flex';
+
+            db.transaction(["climate_chunks"], "readonly").objectStore("climate_chunks").get(activeSessionId).onsuccess = (e) => {
+                const data = e.target.result;
+                if (!data || !data.chunks) return;
+                charts.replay.data = {
+                    labels: data.chunks.map(c => `Min ${(c.chunk_index * 0.5).toFixed(1)}`),
+                    datasets: [
+                        { label: 'HRV', data: data.chunks.map(c => c.avg_hrv), borderColor: '#00ffcc', yAxisID: 'y', tension: 0.3, pointRadius: 2, order: 2 },
+                        { label: 'Heart Rate', data: data.chunks.map(c => c.avg_hr), borderColor: '#ff4444', borderDash: [2,2], yAxisID: 'y', tension: 0.3, pointRadius: 0, order: 4 },
+                        { label: 'FAA', data: data.chunks.map(c => c.avg_faa), borderColor: '#aa00ff', yAxisID: 'y1', borderWidth: 2, tension: 0.3, pointRadius: 2, order: 1 },
+                        { label: 'AXX Load', data: data.chunks.map(c => c.avg_axx||0), borderColor: '#ffcc00', backgroundColor: 'rgba(255,204,0,0.1)', fill: true, yAxisID: 'y1', tension: 0.3, pointRadius: 0, order: 3 }
+                    ]
+                };
+                charts.replay.update(); charts.replay.resetZoom();
+            };
+        }
+
+        // ==========================================
+        // IN-APP AI INSIGHT ENGINE
+        // ==========================================
+        function closePrivacyModal() { document.getElementById('privacy-modal').classList.add('hidden'); }
+        function closeAIPanel() { document.getElementById('ai-panel').classList.remove('open'); }
+
+        function saveApiKey() {
+            const key = document.getElementById('api-key-input').value.trim();
+            if(!key || key.length < 30) return alert("Please enter a valid Gemini API Key.");
+            localStorage.setItem('neurovis_gemini_key', key); closePrivacyModal(); executeAIAnalysis(); 
+        }
+
+        function requestAIAnalysis() {
+            if (!activeSessionId) return;
+            const apiKey = localStorage.getItem('neurovis_gemini_key');
+            if (!apiKey) document.getElementById('privacy-modal').classList.remove('hidden'); else executeAIAnalysis();
+        }
+
+        async function executeAIAnalysis() {
+            const apiKey = localStorage.getItem('neurovis_gemini_key');
+            const aiContent = document.getElementById('ai-content');
+            document.getElementById('ai-panel').classList.add('open');
+            aiContent.innerHTML = '<div style="text-align:center; margin-top:50px; color:#0088ff;"><h2>CONNECTING TO GEMINI...</h2><p>Analyzing mathematical biometric trends.</p></div>';
+
+            const tx = db.transaction(["sessions", "climate_chunks"], "readonly");
+            let sessionMeta = null; let chunkData = null;
+            tx.objectStore("sessions").get(activeSessionId).onsuccess = (e) => sessionMeta = e.target.result;
+            tx.objectStore("climate_chunks").get(activeSessionId).onsuccess = (e) => chunkData = e.target.result;
+
+            tx.oncomplete = async () => {
+                if (!sessionMeta || !chunkData) return aiContent.innerHTML = "<p>Error loading local data.</p>";
+                const s = sessionMeta.summary; let timelineStr = "";
+                chunkData.chunks.forEach(c => timelineStr += `Min ${(c.chunk_index * 0.5).toFixed(1)}: HRV: ${c.avg_hrv}, FAA: ${c.avg_faa}, AXX: ${c.avg_axx}, L-Beta: ${c.avg_l_beta}, R-Beta: ${c.avg_r_beta}\n`);
+
+                const promptText = `
+You are an elite neuro-performance coach and clinical data analyst. Analyze this de-identified biometric telemetry from a ${Math.round(s.total_duration_seconds/60)}-minute session tagged as "${sessionMeta.tag}".
+
+### SESSION SUMMARY
+- Approach State (Positive Emotion): ${s.approach_pct}% of the time
+- Average HRV (Resilience): ${s.avg_hrv} (Range: ${s.min_hrv} - ${s.max_hrv})
+- Average FAA (Emotional Polarity): ${s.avg_faa} (Positive = Approach/Calm, Negative = Withdraw/Stress)
+- Average AXX (Cognitive Anxiety): ${s.avg_axx}
+- Hemispheric Beta (L-Logic vs R-Stress): Left ${s.avg_l_beta} | Right ${s.avg_r_beta}
+
+### 30-SECOND CHUNK TIMELINE
+${timelineStr}
+
+### INSTRUCTIONS
+Format your response clearly using Markdown. Be clinical, insightful, and direct.
+1. **Flow vs Stress:** Did the nervous system settle into a flow state or escalate into stress over the session? Cite the timeline trends.
+2. **Cognitive Load Correlation:** Correlate the cognitive load (Beta/AXX) against the autonomic resilience (HRV).
+3. **Overall Efficacy:** Was this an effective "${sessionMeta.tag}" session? Note any physiological anomalies.
+`;
+
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
+                    });
+                    if (!response.ok) throw new Error("API Error. Please check your key.");
+                    const data = await response.json();
+                    aiContent.innerHTML = marked.parse(data.candidates[0].content.parts[0].text);
+                } catch (error) {
+                    aiContent.innerHTML = `<div style="color:#ff4444;"><h3>API CONNECTION FAILED</h3><p>${error.message}</p><button class="btn" onclick="localStorage.removeItem('neurovis_gemini_key'); requestAIAnalysis();">RESET API KEY</button></div>`;
+                }
+            };
+        }
+
+        // ==========================================
+        // STANDARD ACTIONS & ETL
+        // ==========================================
+        function retagCurrentSession() {
+            if (!activeSessionId) return;
+            const newTag = prompt("Reclassify this session. Enter new tag:", activeSessionTag);
+            if (!newTag || newTag.trim() === "") return;
+            const cleanTag = newTag.trim().toUpperCase();
+            const tx = db.transaction(["sessions", "tags"], "readwrite");
+            tx.objectStore("tags").put({ name: cleanTag });
+            const store = tx.objectStore("sessions");
+            store.get(activeSessionId).onsuccess = (e) => { let sess = e.target.result; sess.tag = cleanTag; store.put(sess); };
+            tx.oncomplete = () => { activeSessionTag = cleanTag; loadGlobalData(); };
+        }
+
+        function openForensics() {
+            if (!activeSessionId) return;
+            db.transaction(["raw_data"], "readonly").objectStore("raw_data").get(activeSessionId).onsuccess = (e) => {
+                const data = e.target.result;
+                if (!data || !data.raw_tick_data) return alert("Raw telemetry not found.");
+                downloadCSV(data.raw_tick_data, `forensics_${activeSessionId}_${activeSessionTag.replace(/\s+/g, '_')}.csv`);
+                window.open('emotionreplay.html', '_blank'); 
+            };
+        }
+
+        function deleteCurrentSession() {
+            if (!activeSessionId || !confirm(`Permanently delete the session: ${activeSessionTag}?`)) return;
+            const tx = db.transaction(["sessions", "climate_chunks", "raw_data"], "readwrite");
+            tx.objectStore("sessions").delete(activeSessionId); tx.objectStore("climate_chunks").delete(activeSessionId); tx.objectStore("raw_data").delete(activeSessionId);
+            tx.oncomplete = () => { document.getElementById('micro-actions').style.display = 'none'; document.getElementById('micro-title').innerText = "SELECT A SESSION"; charts.replay.data.datasets = []; charts.replay.update(); activeSessionId = null; activeSessionTag = null; loadGlobalData(); };
+        }
+
+        function getPercentile(arr, percentile) { if (arr.length === 0) return 0; const sorted = arr.slice().sort((a, b) => a - b); return sorted[Math.floor((percentile / 100) * (sorted.length - 1))]; }
+
+        async function handleCSVImport(event) {
+            if (!db) return alert("Database is disconnected. Please close other tabs.");
+            const files = event.target.files; if (!files || files.length === 0) return;
+            let fallbackTag = prompt(`Batch Uploading ${files.length} files.\n\nFallback Tag:`, "UNTAGGED");
+            if (fallbackTag === null) { document.getElementById('csv-import-input').value = ""; return; }
+            fallbackTag = fallbackTag.trim().toUpperCase() || "UNTAGGED";
+            document.getElementById('session-list').innerHTML = `<div style="text-align:center; color:#00ffcc; margin-top:50px;">PROCESSING ${files.length} FILES...</div>`;
+            let processed = 0;
+            for (let i = 0; i < files.length; i++) { await processSingleFile(files[i], fallbackTag); processed++; }
+            document.getElementById('csv-import-input').value = ""; loadGlobalData(); 
+        }
+
+        function processSingleFile(file, tag) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = async function(e) {
+                    const rows = e.target.result.trim().split('\n');
+                    if (rows.length < 2) return resolve(); 
+                    const headers = rows[0].split(',').map(h => h.trim());
+                    let parsedData = [];
+                    for (let i = 1; i < rows.length; i++) {
+                        const cols = rows[i].split(','); let rowObj = {};
+                        headers.forEach((h, idx) => { const v = cols[idx] ? cols[idx].trim() : null; rowObj[h] = isNaN(v) || v==='' ? v : Number(v); });
+                        parsedData.push(rowObj);
+                    }
+                    await processAndSaveImport(parsedData, tag); resolve();
+                };
+                reader.readAsText(file);
+            });
+        }
+
+        function processAndSaveImport(pendingSessionData, finalTag) {
+            return new Promise((resolve, reject) => {
+                let timestamp = new Date().toISOString(); let exactDurationSeconds = pendingSessionData.length / 20; 
+                if (pendingSessionData.length > 0 && pendingSessionData[0].timestamp) {
+                    const firstTime = new Date(pendingSessionData[0].timestamp); const lastTime = new Date(pendingSessionData[pendingSessionData.length - 1].timestamp);
+                    if (!isNaN(firstTime)) { timestamp = firstTime.toISOString(); const diffSeconds = (lastTime.getTime() - firstTime.getTime()) / 1000; if (!isNaN(diffSeconds) && diffSeconds > 0) exactDurationSeconds = diffSeconds; }
+                }
+                const sessionId = "SESS-IMP-" + new Date(timestamp).getTime() + "-" + Math.floor(Math.random() * 1000); 
+                let hr_arr=[], hrv_arr=[], faa_arr=[], ax_arr=[], axx_arr=[], l_beta_arr=[], r_beta_arr=[];
+                let approachTicks = 0; let c = { hr:0, hrv:0, faa:0, ax:0, axx:0, l_beta:0, r_beta:0, validHr:0, validEeg:0 }; let climateChunks = []; const TICKS = 600; 
+
+                pendingSessionData.forEach((row, index) => {
+                    const hr = row.hr; const hrv = row.rmssd !== undefined ? row.rmssd : (row.hrv || 0); const faa = row.raw_faa !== undefined ? row.raw_faa : (row.valence !== undefined ? row.valence : undefined);
+                    const ax = row.live_ax !== undefined ? row.live_ax : (row.raw_ax || 0); const axx = row.val_axx !== undefined ? row.val_axx : (row.raw_axx !== undefined ? row.raw_axx : (row.live_axx || 0));
+                    const lb = row.L_beta || 0; const rb = row.R_beta || 0;
+                    const hasHr = hr !== undefined && hr > 0; const hasEeg = faa !== undefined;
+                    if (hasHr) { hr_arr.push(hr); hrv_arr.push(hrv); c.hr += hr; c.hrv += hrv; c.validHr++; }
+                    if (hasEeg) { faa_arr.push(faa); ax_arr.push(ax); axx_arr.push(axx); l_beta_arr.push(lb); r_beta_arr.push(rb); c.faa += faa; c.ax += ax; c.axx += axx; c.l_beta += lb; c.r_beta += rb; c.validEeg++; if (faa > 0) approachTicks++; }
+                    if ((index > 0 && (index + 1) % TICKS === 0) || index === pendingSessionData.length - 1) {
+                        climateChunks.push({ chunk_index: climateChunks.length + 1, avg_hr: c.validHr ? Math.round(c.hr / c.validHr) : 0, avg_hrv: c.validHr ? Math.round(c.hrv / c.validHr) : 0, avg_faa: c.validEeg ? parseFloat((c.faa / c.validEeg).toFixed(3)) : 0, avg_ax: c.validEeg ? parseFloat((c.ax / c.validEeg).toFixed(3)) : 0, avg_axx: c.validEeg ? parseFloat((c.axx / c.validEeg).toFixed(3)) : 0, avg_l_beta: c.validEeg ? parseFloat((c.l_beta / c.validEeg).toFixed(3)) : 0, avg_r_beta: c.validEeg ? parseFloat((c.r_beta / c.validEeg).toFixed(3)) : 0 });
+                        c = { hr:0, hrv:0, faa:0, ax:0, axx:0, l_beta:0, r_beta:0, validHr:0, validEeg:0 };
+                    }
+                });
+
+                const summary = { total_duration_seconds: exactDurationSeconds, approach_pct: faa_arr.length ? Math.round((approachTicks / faa_arr.length) * 100) : 0, avg_hr: hr_arr.length ? Math.round(hr_arr.reduce((a,b)=>a+b,0)/hr_arr.length) : 0, avg_hrv: hrv_arr.length ? Math.round(hrv_arr.reduce((a,b)=>a+b,0)/hrv_arr.length) : 0, min_hrv: Math.round(getPercentile(hrv_arr, 5)), max_hrv: Math.round(getPercentile(hrv_arr, 95)), avg_faa: faa_arr.length ? parseFloat((faa_arr.reduce((a,b)=>a+b,0)/faa_arr.length).toFixed(3)) : 0, avg_ax: ax_arr.length ? parseFloat((ax_arr.reduce((a,b)=>a+b,0)/ax_arr.length).toFixed(3)) : 0, avg_axx: axx_arr.length ? parseFloat((axx_arr.reduce((a,b)=>a+b,0)/axx_arr.length).toFixed(3)) : 0, avg_l_beta: l_beta_arr.length ? parseFloat((l_beta_arr.reduce((a,b)=>a+b,0)/l_beta_arr.length).toFixed(3)) : 0, avg_r_beta: r_beta_arr.length ? parseFloat((r_beta_arr.reduce((a,b)=>a+b,0)/r_beta_arr.length).toFixed(3)) : 0 };
+                const tx = db.transaction(["sessions", "climate_chunks", "raw_data", "tags"], "readwrite");
+                tx.objectStore("tags").put({ name: finalTag }); tx.objectStore("sessions").add({ session_id: sessionId, timestamp: timestamp, tag: finalTag, summary: summary }); tx.objectStore("climate_chunks").add({ session_id: sessionId, chunks: climateChunks }); tx.objectStore("raw_data").add({ session_id: sessionId, raw_tick_data: pendingSessionData });
+                tx.oncomplete = () => resolve(); tx.onerror = (e) => reject(e);
+            });
+        }
+
+        function downloadCSV(data, filename) {
+            if (!data || !data.length) return;
+            const headers = Object.keys(data[0]).join(',');
+            const rows = data.map(row => Object.values(row).map(val => { let str = String(val); return str.includes(',') ? `"${str}"` : str; }).join(','));
+            const blob = new Blob([headers + "\n" + rows.join("\n")], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = filename;
+            document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        }
+        
+        function bulkExportDatabase() {
+            const mode = prompt("BACKUP MODE:\nType 'PARTIAL' for a lightweight LLM-friendly backup (metadata only).\nType 'FULL' for a complete backup (includes heavy raw telemetry).", "PARTIAL");
+            if (!mode) return;
+            const isFull = mode.trim().toUpperCase() === "FULL";
+
+            const tx = db.transaction(["sessions", "climate_chunks", "raw_data", "tags"], "readonly");
+            let dump = {};
+            const stores = isFull ? ["sessions", "climate_chunks", "tags", "raw_data"] : ["sessions", "climate_chunks", "tags"];
+            let completed = 0;
+            
+            stores.forEach(store => {
+                tx.objectStore(store).getAll().onsuccess = (e) => {
+                    dump[store] = e.target.result;
+                    completed++;
+                    if (completed === stores.length) {
+                        try {
+                            let blobParts = [];
+                            blobParts.push('{"sessions":' + JSON.stringify(dump.sessions));
+                            blobParts.push(',"climate_chunks":' + JSON.stringify(dump.climate_chunks));
+                            blobParts.push(',"tags":' + JSON.stringify(dump.tags));
+                            
+                            if (isFull) {
+                                blobParts.push(',"raw_data":[');
+                                const raw = dump.raw_data;
+                                for (let i = 0; i < raw.length; i++) {
+                                    blobParts.push(JSON.stringify(raw[i]));
+                                    if (i < raw.length - 1) blobParts.push(',');
+                                }
+                                blobParts.push(']');
+                            }
+                            blobParts.push('}');
+                            
+                            const blob = new Blob(blobParts, {type: 'application/json'});
+                            const link = document.createElement("a"); 
+                            link.href = URL.createObjectURL(blob);
+                            link.download = `neurovis_${isFull ? 'full' : 'partial'}_backup_${new Date().toISOString().split('T')[0]}.json`;
+                            document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                        } catch (err) {
+                            alert("Export failed. The dataset might be too large for browser memory. " + err.message);
+                        }
+                    }
+                };
+            });
+        }
+
+        function restoreDatabase(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            if (!confirm("WARNING: Restoring a database will OVERWRITE your current data. Proceed?")) { event.target.value = ""; return; }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    const tx = db.transaction(["sessions", "climate_chunks", "raw_data", "tags"], "readwrite");
+                    
+                    tx.objectStore("sessions").clear(); tx.objectStore("climate_chunks").clear(); tx.objectStore("raw_data").clear(); tx.objectStore("tags").clear();
+                    
+                    if (data.sessions) data.sessions.forEach(s => tx.objectStore("sessions").put(s));
+                    if (data.climate_chunks) data.climate_chunks.forEach(c => tx.objectStore("climate_chunks").put(c));
+                    if (data.tags) data.tags.forEach(t => tx.objectStore("tags").put(t));
+                    if (data.raw_data) data.raw_data.forEach(r => tx.objectStore("raw_data").put(r));
+                    
+                    tx.oncomplete = () => { alert("Database successfully restored!"); loadGlobalData(); };
+                    tx.onerror = (err) => alert("Error restoring database: " + err.target.error);
+                } catch (err) {
+                    alert("Invalid JSON file. Note: Full backup files may be too large to restore directly via browser memory. " + err.message);
+                }
+                event.target.value = ""; 
+            };
+            reader.readAsText(file);
+        }
+    </script>
+</body>
+</html>
