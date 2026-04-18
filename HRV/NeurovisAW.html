@@ -226,7 +226,7 @@
                         <option>Endurance (Run/Cycle/Swim)</option>
                         <option>Resistance (Weightlifting)</option>
                         <option>Mixed (Crossfit/HIIT)</option>
-                        <option>Sedentary</option>
+                        <option>None</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -308,9 +308,49 @@
     </div>
 </div>
 
+<div id="filterModal" class="modal-overlay">
+    <div class="modal-content glass-panel" style="max-width: 500px;">
+        <h2 id="filterModalTitle">Filter Data</h2>
+        <p id="filterModalDesc">Choose how you want to filter this data.</p>
+        
+        <div class="form-section" style="border: none; padding-bottom: 0;">
+            <div class="form-group">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                    <input type="radio" name="filter_type" value="all" checked onchange="toggleFilterDates()" style="accent-color:#007aff; width:16px; height:16px;"> 
+                    Import All Data (<span id="filter_all_count">0</span> records)
+                </label>
+            </div>
+            <div class="form-group">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                    <input type="radio" name="filter_type" value="afib" onchange="toggleFilterDates()" style="accent-color:#007aff; width:16px; height:16px;"> 
+                    High-Density Only (AFib Mode) (<span id="filter_afib_count">0</span> records)
+                </label>
+            </div>
+            <div class="form-group">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                    <input type="radio" name="filter_type" value="date" onchange="toggleFilterDates()" style="accent-color:#007aff; width:16px; height:16px;"> 
+                    Custom Date Range
+                </label>
+                <div id="filter_date_inputs" style="display:none; margin-top: 15px; margin-left: 24px; padding: 15px; background: rgba(0,0,0,0.03); border-radius: 8px;">
+                    <div style="display:flex; gap: 10px; align-items: center;">
+                        <input type="date" id="filter_start_date" style="padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-family:inherit;">
+                        <span style="font-size: 12px; color: #555;">to</span>
+                        <input type="date" id="filter_end_date" style="padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-family:inherit;">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-actions" style="margin-top: 20px;">
+            <button class="btn-upload btn-secondary" onclick="closeFilterModal()">Cancel</button>
+            <button class="btn-upload btn-success" id="filterConfirmBtn" onclick="applyFilter()">Confirm</button>
+        </div>
+    </div>
+</div>
+
 <div class="header glass-panel">
     <div class="header-left">
-        <h2>Neurovis HRV (alpha v0.11)</h2>
+        <h2>Neurovis HRV (alpha v0.14)</h2>
         <span style="font-size:13px; color:#86868b; margin-left:10px;" id="file-status">Initializing Engine...</span>
         <span id="zoom-indicator">Zoom Active</span>
     </div>
@@ -466,6 +506,88 @@
 </div>
 
 <script>
+    // --- NEW ANONYMIZATION & UUID ENGINE ---
+    function getOrCreateUUID() {
+        let uuid = localStorage.getItem('neurovis_research_id');
+        if (!uuid) {
+            uuid = crypto.randomUUID ? crypto.randomUUID() : 'nv-' + Date.now() + '-' + Math.floor(Math.random() * 1000000);
+            localStorage.setItem('neurovis_research_id', uuid);
+        }
+        return uuid;
+    }
+
+    function generateAnonymizedPayload(dbData, surveyData) {
+        const fuzzDuration = (minutes) => {
+        if (!minutes || minutes <= 0) return "0m";
+        const lowerBound = Math.floor(minutes / 20) * 20;
+        const upperBound = lowerBound + 20;
+        return `${lowerBound}-${upperBound}m`;
+    };
+
+        const safeAverage = (arr) => {
+            if (!arr || arr.length === 0) return null;
+            const sum = arr.reduce((acc, val) => acc + (val.value || val.rMSSD_ms || val), 0);
+            return Math.round(sum / arr.length);
+        };
+
+        // Group HRV by day
+        const days = {};
+        (dbData.hrv || []).forEach(record => {
+            const date = record.timestamp_utc.split('T')[0];
+            if (!days[date]) {
+                days[date] = {
+                    date: date,
+                    all_hrv: [],
+                    sleep_records: { core: [], deep: [], rem: [] },
+                    sleep_totals: { 
+                        core: record.sleep_core_min || 0, 
+                        deep: record.sleep_deep_min || 0, 
+                        rem: record.sleep_rem_min || 0, 
+                        total: (record.sleep_core_min || 0) + (record.sleep_deep_min || 0) + (record.sleep_rem_min || 0)
+                    }
+                };
+            }
+            days[date].all_hrv.push(record.rMSSD_ms);
+
+            if (record.is_deep_sleep) days[date].sleep_records.deep.push(record.rMSSD_ms);
+            else if (record.is_sleeping) days[date].sleep_records.core.push(record.rMSSD_ms); 
+        });
+
+        const workoutsByDay = {};
+        (dbData.workouts || []).forEach(w => {
+            if (!workoutsByDay[w.date]) workoutsByDay[w.date] = [];
+            workoutsByDay[w.date].push({
+                duration_bucket: fuzzDuration(w.duration_min),
+                high_hr_minutes_bucket: fuzzDuration(w.zone_mins ? w.zone_mins[">160"] : 0)
+            });
+        });
+
+        const daily_summaries = Object.keys(days).map(date => {
+            const day = days[date];
+            return {
+                date: date,
+                daily_avg_hrv: safeAverage(day.all_hrv),
+                sleep: {
+                    total_duration: fuzzDuration(day.sleep_totals.total),
+                    core_duration: fuzzDuration(day.sleep_totals.core),
+                    core_avg_hrv: safeAverage(day.sleep_records.core),
+                    deep_duration: fuzzDuration(day.sleep_totals.deep),
+                    deep_avg_hrv: safeAverage(day.sleep_records.deep),
+                    rem_duration: fuzzDuration(day.sleep_totals.rem),
+                    rem_avg_hrv: safeAverage(day.sleep_records.rem)
+                },
+                workouts: workoutsByDay[date] || []
+            };
+        });
+
+        return {
+            research_id: getOrCreateUUID(),
+            upload_date: new Date().toISOString().split('T')[0],
+            daily_summaries: daily_summaries,
+            questionnaire: surveyData || {}
+        };
+    }
+
     // --- CUSTOM TOOLTIP ENGINE ---
     document.addEventListener('DOMContentLoaded', () => {
         const tooltip = document.getElementById('global-tooltip');
@@ -977,7 +1099,7 @@
         Plotly.Plots.resize('chart-candle');
     }
 
-    // --- DB EXPORT & IMPORT ENGINE ---
+    // --- UPDATED EXPORT ENGINE (Now shows the safe payload) ---
     async function exportFullDB() {
         if (!db) { alert("Database not initialized."); return; }
         try {
@@ -987,21 +1109,15 @@
             const surveyReq = tx.objectStore('surveyData').get('user_profile');
             
             surveyReq.onsuccess = () => {
-                const fullBackup = {
-                    hrv: dbData.hrv,
-                    workouts: dbData.workouts,
-                    survey: surveyReq.result || null
-                };
-                
-                const jsonStr = JSON.stringify(fullBackup);
+                const safePayload = generateAnonymizedPayload(dbData, surveyReq.result);
+                const jsonStr = JSON.stringify(safePayload, null, 2);
                 const blob = new Blob([jsonStr], {type: "application/json"});
-                const sizeMB = (blob.size / (1024 * 1024)).toFixed(2);
                 
-                if (confirm(`Your database backup is ${sizeMB} MB. Proceed with download?`)) {
+                if (confirm(`Your anonymized research payload is ready to review. Proceed with download?`)) {
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `neurovis_backup_${new Date().toISOString().split('T')[0]}.json`;
+                    a.download = `neurovis_research_payload_${safePayload.upload_date}.json`;
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
@@ -1013,41 +1129,130 @@
         }
     }
 
-    // --- SERVER UPLOAD ENGINE (Pre-Flight Security) ---
+    // --- UNIVERSAL FILTER ENGINE ---
+    let pendingActionData = null;
+    let pendingActionMode = ''; // 'import' or 'upload'
+
+    function openFilterModal(mode, data) {
+        pendingActionMode = mode;
+        pendingActionData = data;
+
+        document.getElementById('filterModal').style.display = 'flex';
+        document.getElementById('filterModalTitle').innerText = mode === 'import' ? 'Filter Import Data' : 'Filter Upload Data';
+        document.getElementById('filterModalDesc').innerText = mode === 'import' ? 
+            'Select which data you want to save to your local dashboard.' : 
+            'Select which data you want to securely transmit to Neurovis.';
+
+        // Calculate counts for the UI
+        const allCount = data.hrv.length;
+        const afibCount = data.hrv.filter(d => d.is_afib_day).length;
+
+        document.getElementById('filter_all_count').innerText = allCount.toLocaleString();
+        document.getElementById('filter_afib_count').innerText = afibCount.toLocaleString();
+
+        document.querySelector('input[name="filter_type"][value="all"]').checked = true;
+        toggleFilterDates();
+    }
+
+    function toggleFilterDates() {
+        const val = document.querySelector('input[name="filter_type"]:checked').value;
+        document.getElementById('filter_date_inputs').style.display = (val === 'date') ? 'block' : 'none';
+    }
+
+    function closeFilterModal() {
+        document.getElementById('filterModal').style.display = 'none';
+        pendingActionData = null;
+        if (pendingActionMode === 'upload') {
+            const btn = document.getElementById('btn-upload-server');
+            btn.innerText = "Upload to Neurovis";
+            btn.disabled = false;
+        }
+    }
+
+    async function applyFilter() {
+        const filterType = document.querySelector('input[name="filter_type"]:checked').value;
+        let filteredHrv = pendingActionData.hrv;
+
+        if (filterType === 'afib') {
+            filteredHrv = filteredHrv.filter(d => d.is_afib_day);
+        } else if (filterType === 'date') {
+            const sDate = document.getElementById('filter_start_date').value;
+            const eDate = document.getElementById('filter_end_date').value;
+            if (sDate && eDate) {
+                filteredHrv = filteredHrv.filter(d => {
+                    const dStr = d.timestamp_utc.split('T')[0];
+                    return dStr >= sDate && dStr <= eDate;
+                });
+            } else {
+                alert("Please select both a start and end date.");
+                return;
+            }
+        }
+
+        // Cleanly filter workouts to match the remaining valid HRV dates
+        const validDates = new Set(filteredHrv.map(d => d.timestamp_utc.split('T')[0]));
+        const filteredWorkouts = pendingActionData.workouts.filter(w => validDates.has(w.date));
+
+        const finalData = { ...pendingActionData, hrv: filteredHrv, workouts: filteredWorkouts };
+        document.getElementById('filterModal').style.display = 'none';
+
+        if (pendingActionMode === 'import') {
+            statusText.innerText = "Saving to Local Database...";
+            await saveToDB(finalData);
+            await refreshDashboardFromDB();
+            statusText.innerText = "Import complete!";
+            openSurvey(); // Ask for survey after import finishes
+        } else if (pendingActionMode === 'upload') {
+            executeNeurovisUpload(finalData);
+        }
+    }
+
+    // --- UPDATED SERVER UPLOAD ENGINE (Consent Gate) ---
     async function uploadToNeurovis() {
         if (!db) { alert("Database not initialized."); return; }
-        
+
+        const userConsent = confirm(
+            "By uploading your data to Neurovis, you are agreeing to share your fully anonymized daily summary. " +
+            "This data will be used for research only.\n\n" +
+            "You can review the exact, anonymized payload being sent by clicking 'Cancel' and using the 'Export Data' button.\n\n" +
+            "Do you wish to proceed?"
+        );
+        if (!userConsent) return; // Instantly stops if they click Cancel
+
         const uploadBtn = document.getElementById('btn-upload-server');
-        uploadBtn.innerText = "Encrypting...";
+        uploadBtn.innerText = "Preparing...";
         uploadBtn.disabled = true;
 
         try {
             let dbData = await loadFromDB();
-            
-            // Security Check: Ensure they actually have data to send
             if (dbData.hrv.length < 14) {
                 alert("Insufficient data. Please import a valid Apple Health export first.");
                 uploadBtn.innerText = "Upload to Neurovis";
                 uploadBtn.disabled = false;
                 return;
             }
+            openFilterModal('upload', dbData);
+        } catch (err) {
+            alert("Error: " + err.message);
+            uploadBtn.innerText = "Upload to Neurovis";
+            uploadBtn.disabled = false;
+        }
+    }
 
+    // --- UPDATED UPLOAD EXECUTION (Converts to Anonymized Payload) ---
+    async function executeNeurovisUpload(filteredData) {
+        const uploadBtn = document.getElementById('btn-upload-server');
+        uploadBtn.innerText = "Encrypting...";
+
+        try {
             const tx = db.transaction(['surveyData'], 'readonly');
             const surveyReq = tx.objectStore('surveyData').get('user_profile');
             
             surveyReq.onsuccess = async () => {
-                // 1. Build the payload and attach the UTC timestamp
-                const payload = {
-                    hrv: dbData.hrv,
-                    workouts: dbData.workouts,
-                    survey: surveyReq.result || null,
-                    upload_generated_at: new Date().toISOString()
-                };
+                // Pass the strictly filtered data through the anonymizer
+                const safePayload = generateAnonymizedPayload(filteredData, surveyReq.result);
                 
-                // 2. Stringify it EXACTLY as the server expects (no extra spaces)
-                const payloadString = JSON.stringify(payload);
-                
-                // 3. Generate SHA-256 Hash using Web Crypto API
+                const payloadString = JSON.stringify(safePayload);
                 const SECRET_SALT = "neurovis_alpha_2026";
                 const msgUint8 = new TextEncoder().encode(payloadString + SECRET_SALT);
                 const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
@@ -1055,15 +1260,10 @@
                 const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
                 uploadBtn.innerText = "Transmitting...";
-
-                // 4. Fire to the Flask Server
-                // Note: Change 'localhost' to your Pi's IP if testing from another machine on the network
+                
                 const response = await fetch('https://api.neurovis.io/api/upload', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Payload-Hash': hashHex
-                    },
+                    headers: { 'Content-Type': 'application/json', 'X-Payload-Hash': hashHex },
                     body: payloadString
                 });
 
@@ -1081,7 +1281,7 @@
             };
         } catch (err) {
             alert("Upload error: " + err.message);
-            uploadBtn.innerText = "Upload to Neurovis";
+            uploadBtn.innerText = "Upload Failed";
             uploadBtn.disabled = false;
         }
     }
@@ -1317,25 +1517,23 @@ def process_zip_stream(zip_bytes, last_sync_str):
                 elem.clear()
                 root.clear()
 
-    send_update("Applying AFib High-Confidence Data Filter...")
+    send_update("Tagging AFib High-Confidence Data...")
     daily_hrv_counts = {}
     for event in hrv_events:
         day_str = event['timestamp_str'][:10]
         daily_hrv_counts[day_str] = daily_hrv_counts.get(day_str, 0) + 1
         
-    AFIB_THRESHOLD = 1 
+    AFIB_THRESHOLD = 15 # 15+ background readings a day signifies AFib History is on
     
-    high_conf_hrv_events = [e for e in hrv_events if daily_hrv_counts[e['timestamp_str'][:10]] >= AFIB_THRESHOLD]
+    for event in hrv_events:
+        day_str = event['timestamp_str'][:10]
+        event['is_afib_day'] = bool(daily_hrv_counts[day_str] >= AFIB_THRESHOLD)
     
     # Check if more than half their recorded days have fewer than 24 readings
     is_sparse_data = len([d for d, c in daily_hrv_counts.items() if c < 24]) > (len(daily_hrv_counts) * 0.5)
     
-    dropped_days = len([d for d, c in daily_hrv_counts.items() if c < AFIB_THRESHOLD])
-    kept_days = len([d for d, c in daily_hrv_counts.items() if c >= AFIB_THRESHOLD])
-    
-    send_update(f"Filtered out {dropped_days} sparse days. Analyzing {kept_days} days...")
-    
-    hrv_events = high_conf_hrv_events 
+    send_update(f"Analyzed {len(daily_hrv_counts)} days of data...")
+
 
     df_hr = pd.DataFrame(hr_data, columns=['ts', 'bpm']).set_index('ts').sort_index() if hr_data else pd.DataFrame()
     processed_workouts = []
@@ -1412,6 +1610,7 @@ def process_zip_stream(zip_bytes, last_sync_str):
             "timestamp_utc": event['timestamp_str'],
             "rMSSD_ms": float(event['rMSSD_ms']),
             "is_moving": bool(is_moving),
+            "is_afib_day": bool(event.get('is_afib_day', False)),
             "is_workout_window": bool(is_workout_window),
             "is_sleeping": bool(is_sleeping),
             "is_deep_sleep": bool(is_deep_sleep),
@@ -1513,16 +1712,12 @@ def process_zip_stream(zip_bytes, last_sync_str):
             statusText.innerText = data.message;
         } else if (data.status === 'success') {
             if (data.data.is_sparse) {
-                alert(" WARNING: LOW RESOLUTION DATA DETECTED\n\nIt appears 'AFib History' is not enabled on your Apple Watch. Your HRV data only has a few readings per day.\n\nWhile Neurovis will display your data, your baseline trends and daily readiness scores will be highly inaccurate until AFib History is enabled.");
+                alert(" WARNING: LOW RESOLUTION DATA DETECTED\n\nIt appears 'AFib History' is not enabled on your Apple Watch. Your baseline trends will be highly inaccurate until AFib History is enabled.");
             }
-            statusText.innerText = "Saving to Local Database...";
-            await saveToDB(data.data);
-            await refreshDashboardFromDB();
-            statusText.innerText = "Upload and merge complete!";
+            statusText.innerText = "Processing Complete. Select Data Filter...";
+            // Open the filter modal instead of saving immediately!
+            openFilterModal('import', data.data);
             document.getElementById('fileInput').value = ''; 
-            
-            // Pop open the survey when new data is uploaded
-            openSurvey();
         } else if (data.status === 'error') {
             statusText.innerText = "Error processing file.";
             alert("Error processing zip: " + data.error);

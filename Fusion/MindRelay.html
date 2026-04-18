@@ -176,13 +176,13 @@
                 <div id="kpi-hrv-trend"></div>
             </div>
             <div class="kpi-card" id="card-axx">
-                <div class="custom-tooltip"><span style="color:#ffcc00; font-weight:bold;">AVG AXX LOAD</span><br>Cognitive Anxiety Index. A composite metric of brainwave activity indicating mental stress or cognitive load.</div>
+                <div class="custom-tooltip"><span style="color:#ffcc00; font-weight:bold;">AVG AXX LOAD</span><br>Cognitive Stress Index. A composite metric of brainwave activity indicating mental stress or cognitive load.</div>
                 <div class="kpi-title">AVG AXX LOAD</div>
                 <div class="kpi-value" id="kpi-axx" style="color:#ffcc00;">0.00</div>
                 <div id="kpi-axx-trend"></div>
             </div>
             <div class="kpi-card" id="card-ax">
-                <div class="custom-tooltip"><span style="color:#ff8800; font-weight:bold;">AVG AX LOAD</span><br>Somatic Anxiety Index. A metric tracking physical/bodily arousal and stress.</div>
+                <div class="custom-tooltip"><span style="color:#ff8800; font-weight:bold;">AVG AX LOAD</span><br>Somatic Stress Index. A metric tracking physical/bodily arousal and stress.</div>
                 <div class="kpi-title">AVG AX LOAD</div>
                 <div class="kpi-value" id="kpi-ax" style="color:#ff8800;">0.00</div>
                 <div id="kpi-ax-trend"></div>
@@ -318,7 +318,7 @@
 
             charts.hrv = new Chart(document.getElementById('trendHrv').getContext('2d'), { type: 'line', data: { labels: [], datasets: [] }, options: { ...commonOptions, plugins: { ...commonOptions.plugins, title: { display: true, text: 'VAGAL TONE (HRV FLUCTUATIONS)', color: '#fff' } }, scales: { ...commonOptions.scales, y: { title: {display: true, text: 'HRV (rMSSD)', font: {size: 9}} } } } });
             charts.faa = new Chart(document.getElementById('trendFaa').getContext('2d'), { type: 'bar', data: { labels: [], datasets: [] }, options: { ...commonOptions, plugins: { ...commonOptions.plugins, title: { display: true, text: 'EMOTIONAL POLARITY (FAA)', color: '#fff' } }, scales: { ...commonOptions.scales, y: { title: {display: true, text: 'FAA Score', font: {size: 9}} } } } });
-            charts.axx = new Chart(document.getElementById('trendAxx').getContext('2d'), { type: 'line', data: { labels: [], datasets: [] }, options: { ...commonOptions, plugins: { ...commonOptions.plugins, title: { display: true, text: 'ANXIETY & COGNITIVE LOAD', color: '#fff' } }, scales: { ...commonOptions.scales, y: { title: {display: true, text: 'Index Score', font: {size: 9}} } } } });
+            charts.axx = new Chart(document.getElementById('trendAxx').getContext('2d'), { type: 'line', data: { labels: [], datasets: [] }, options: { ...commonOptions, plugins: { ...commonOptions.plugins, title: { display: true, text: 'STRESS & COGNITIVE LOAD', color: '#fff' } }, scales: { ...commonOptions.scales, y: { title: {display: true, text: 'Index Score', font: {size: 9}} } } } });
             charts.beta = new Chart(document.getElementById('trendBeta').getContext('2d'), { type: 'line', data: { labels: [], datasets: [] }, options: { ...commonOptions, plugins: { ...commonOptions.plugins, title: { display: true, text: 'COGNITIVE ASYMMETRY (L/R BETA)', color: '#fff' } }, scales: { ...commonOptions.scales, y: { title: {display: true, text: 'Beta Power', font: {size: 9}} } } } });
             charts.replay = new Chart(document.getElementById('replayChart').getContext('2d'), { type: 'line', data: { labels: [], datasets: [] }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { tooltip: { backgroundColor: 'rgba(0,0,0,0.8)' }, legend: { position: 'bottom' } }, scales: { x: { ticks: { maxTicksLimit: 15 } }, y: { position: 'left', title: {display: true, text: 'HRV / Heart Rate'} }, y1: { position: 'right', grid: {drawOnChartArea: false}, title: {display: true, text: 'Emotion Index'} } } } });
         }
@@ -601,7 +601,7 @@ You are an elite neuro-performance coach and clinical data analyst. Analyze this
 - Approach State (Positive Emotion): ${s.approach_pct}% of the time
 - Average HRV (Resilience): ${s.avg_hrv} (Range: ${s.min_hrv} - ${s.max_hrv})
 - Average FAA (Emotional Polarity): ${s.avg_faa} (Positive = Approach/Calm, Negative = Withdraw/Stress)
-- Average AXX (Cognitive Anxiety): ${s.avg_axx}
+- Average AXX (Cognitive Stress): ${s.avg_axx}
 - Hemispheric Beta (L-Logic vs R-Stress): Left ${s.avg_l_beta} | Right ${s.avg_r_beta}
 
 ### 30-SECOND CHUNK TIMELINE

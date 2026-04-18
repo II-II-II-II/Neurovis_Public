@@ -207,14 +207,14 @@
             <div class="stat-box">
                 <div class="tooltip-container">
                     <div class="stat-label">AVG AX SCORE</div>
-                    <div class="custom-tooltip"><span style="color:#0088ff; font-weight:bold;">AX LOAD (SOMATIC)</span><br>Physical anxiety and bodily arousal direction.</div>
+                    <div class="custom-tooltip"><span style="color:#0088ff; font-weight:bold;">AX LOAD (SOMATIC)</span><br>Physical stress and bodily arousal direction.</div>
                 </div>
                 <div class="stat-val" style="color:#3498db" id="stat-ax-score">--</div>
             </div>
             <div class="stat-box">
                 <div class="tooltip-container">
                     <div class="stat-label">AVG AXX SCORE</div>
-                    <div class="custom-tooltip"><span style="color:#0088ff; font-weight:bold;">AXX LOAD (COGNITIVE)</span><br>A composite index combining Somatic (Body) anxiety with Beta-wave (Brain) cognitive load.</div>
+                    <div class="custom-tooltip"><span style="color:#0088ff; font-weight:bold;">AXX LOAD (COGNITIVE)</span><br>A composite index combining Somatic (Body) stress with Beta-wave (Brain) cognitive load.</div>
                 </div>
                 <div class="stat-val" style="color:#ffcc00" id="stat-axx-score">--</div>
             </div>
@@ -238,8 +238,8 @@
             <div class="chart-container">
                 <div class="chart-header-wrapper">
                     <div class="tooltip-container">
-                        <span class="chart-title-text">ANXIETY SCORE (AX/AXX) - MINUTE AVERAGES</span>
-                        <div class="custom-tooltip">Plots Somatic (Body) and Cognitive (Brain) anxiety load over a rolling 1-minute window. Detects real-time stress escalations.</div>
+                        <span class="chart-title-text">STRESS SCORE (AX/AXX) - MINUTE AVERAGES</span>
+                        <div class="custom-tooltip">Plots Somatic (Body) and Cognitive (Brain) stress load over a rolling 1-minute window. Detects real-time stress escalations.</div>
                     </div>
                 </div>
                 <div class="chart-canvas-wrapper"><canvas id="axMinuteChart"></canvas></div>
@@ -538,12 +538,12 @@
                     "TRAIN_BASELINE": "rgba(100, 100, 100, 0.2)",
                     "TRAIN_FOCUS": "rgba(255, 200, 0, 0.2)",
                     "TRAIN_RESONANCE": "rgba(0, 255, 200, 0.2)",
-                    "ANXIETY_MARKED": "rgba(255, 255, 0, 0.5)"
+                    "STRESS_MARKED": "rgba(255, 255, 0, 0.5)"
                 };
 
                 uniqueLabels.forEach(label => {
                     const color = colorMap[label] || "rgba(128, 128, 128, 0.2)";
-                    const isMomentary = label === "STIMULUS" || label === "ANXIETY_MARKED";
+                    const isMomentary = label === "STIMULUS" || label === "STRESS_MARKED";
                     
                     datasets.push({
                         type: isMomentary ? 'bar' : 'line',
@@ -606,7 +606,7 @@
                         return sum + rawAxx; 
                     }, 0) / bucketData.length;
                     
-                    const hasAnxietyTag = bucketData.some(r => r.manual_label === 'ANXIETY_MARKED');
+                    const hasStressTag = bucketData.some(r => r.manual_label === 'STRESS_MARKED');
                     const realTimeStr = new Date(bucketData[0].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     
                     minuteBuckets.push({
@@ -614,7 +614,7 @@
                         realTime: realTimeStr,
                         ax: avgAx,
                         axx: avgAxx,
-                        anxietyMarker: hasAnxietyTag ? avgAxx : null
+                        stressMarker: hasStressTag ? avgAxx : null
                     });
                 }
             }
@@ -658,7 +658,7 @@
                     datasets: [
                         { type: 'line', label: 'AXX Score (Composite)', data: minuteBuckets.map(b => b.axx), borderColor: '#ff4444', borderWidth: 2, borderDash: [5, 5], pointRadius: 3, order: 2 },
                         { type: 'line', label: 'AX Score (Direction)', data: minuteBuckets.map(b => b.ax), borderColor: '#3498db', borderWidth: 2, pointRadius: 3, order: 3 },
-                        { type: 'scatter', label: 'Subjective Anxiety Marker', data: minuteBuckets.map((b, i) => b.anxietyMarker !== null ? b.anxietyMarker : null), backgroundColor: '#ffff00', pointStyle: 'triangle', radius: 10, order: 1 }
+                        { type: 'scatter', label: 'Subjective Stress Marker', data: minuteBuckets.map((b, i) => b.stressMarker !== null ? b.stressMarker : null), backgroundColor: '#ffff00', pointStyle: 'triangle', radius: 10, order: 1 }
                     ]
                 },
                 options: {

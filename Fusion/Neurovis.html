@@ -702,7 +702,7 @@
             options: {
                 responsive: true, maintainAspectRatio: false,
                 scales: { x: { display: true, grid: { color: '#222' }, ticks: { color: '#666', maxTicksLimit: 5 } }, y: { display: true, grid: { color: '#222' } } },
-                plugins: { legend: { display: true, labels: {color: '#888', font: {size: 9}} }, title: { display: true, text: 'LIVE ANXIETY TICKER (1-Min Rolling)', color: '#fff', font: {size: 10} } }
+                plugins: { legend: { display: true, labels: {color: '#888', font: {size: 9}} }, title: { display: true, text: 'LIVE STRESS TICKER (1-Min Rolling)', color: '#fff', font: {size: 10} } }
             }
         });
 
@@ -949,7 +949,7 @@
             document.getElementById('fba-logic-pct').innerText = '50%';
             document.getElementById('fba-stress-pct').innerText = '50%';
 
-            // 3. Purge the Anxiety Ticker chart history
+            // 3. Purge the Stress Ticker chart history
             if (axChart) {
                 axChart.data.labels = [];
                 axChart.data.datasets[0].data = [];
