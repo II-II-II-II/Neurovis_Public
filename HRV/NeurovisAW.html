@@ -348,9 +348,52 @@
     </div>
 </div>
 
+<div id="exportModal" class="modal-overlay" style="display: none;">
+    <div class="modal-content glass-panel" style="max-width: 500px;">
+        
+        <div id="export-step-1">
+            <h2 style="margin-top: 0;">Export Data</h2>
+            <p style="margin-bottom: 20px; color: #515154; line-height: 1.5;">
+                Do you want to export an anonymized research payload (exactly what you would share with Neurovis) or do you want to do a detailed export for your own analysis?
+            </p>
+            <div class="modal-actions" style="justify-content: space-between;">
+                <button class="btn-upload btn-secondary" onclick="closeExportModal()">Cancel</button>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn-upload btn-secondary" style="background: #e5e5ea; color: #1d1d1f; border: none;" onclick="showDateSelectors()">Detailed Export</button>
+                    <button class="btn-upload btn-primary" onclick="executeExport('summary')">Anonymized Payload</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="export-step-2" style="display: none;">
+            <h2 style="margin-top: 0;">Detailed Export</h2>
+            <p style="margin-bottom: 15px; color: #515154;">Select a date range for your raw data dump. Leave blank to export all history.</p>
+            
+            <div class="form-section" style="border: none; padding-bottom: 0;">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Start Date</label>
+                        <input type="date" id="export_start_date" style="width: 90%; padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-family:inherit;">
+                    </div>
+                    <div class="form-group">
+                        <label>End Date</label>
+                        <input type="date" id="export_end_date" style="width: 90%; padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-family:inherit;">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-actions" style="margin-top: 20px; justify-content: space-between;">
+                <button class="btn-upload btn-secondary" onclick="resetExportModal()">Back</button>
+                <button class="btn-upload btn-primary" onclick="executeExport('raw')">Download Details</button>
+            </div>
+        </div>
+
+    </div>
+</div>
+
 <div class="header glass-panel">
     <div class="header-left">
-        <h2>Neurovis HRV (alpha v0.14)</h2>
+        <h2>Neurovis HRV (alpha v0.15)</h2>
         <span style="font-size:13px; color:#86868b; margin-left:10px;" id="file-status">Initializing Engine...</span>
         <span id="zoom-indicator">Zoom Active</span>
     </div>
@@ -367,7 +410,7 @@
         </div>
         
         <button class="btn-upload btn-secondary" onclick="openSurvey()">Profile</button>
-        <button class="btn-upload btn-secondary" onclick="exportFullDB()">Export Data</button>
+        <button class="btn-upload btn-secondary" onclick="openExportModal()">Export Data</button>
         
         <button id="btn-upload-server" class="btn-upload btn-secondary" onclick="uploadToNeurovis()" style="display: none;">Upload to Neurovis</button>
         
@@ -1099,30 +1142,94 @@
         Plotly.Plots.resize('chart-candle');
     }
 
-    // --- UPDATED EXPORT ENGINE (Now shows the safe payload) ---
-    async function exportFullDB() {
+    // --- STEPPED EXPORT MODAL LOGIC ---
+    function openExportModal() {
+        document.getElementById('export-step-1').style.display = 'block';
+        document.getElementById('export-step-2').style.display = 'none';
+        document.getElementById('exportModal').style.display = 'flex';
+    }
+
+    function closeExportModal() {
+        document.getElementById('exportModal').style.display = 'none';
+    }
+
+    function showDateSelectors() {
+        document.getElementById('export-step-1').style.display = 'none';
+        document.getElementById('export-step-2').style.display = 'block';
+    }
+
+    function resetExportModal() {
+        document.getElementById('export-step-2').style.display = 'none';
+        document.getElementById('export-step-1').style.display = 'block';
+    }
+
+    async function executeExport(exportType) {
         if (!db) { alert("Database not initialized."); return; }
+        
         try {
             let dbData = await loadFromDB();
-            
+            let filteredHrv = dbData.hrv;
+            let filteredWorkouts = dbData.workouts;
+
+            // Apply Date Filters ONLY if they are doing a raw export
+            if (exportType === 'raw') {
+                const sDate = document.getElementById('export_start_date').value;
+                const eDate = document.getElementById('export_end_date').value;
+                
+                if (sDate || eDate) {
+                    filteredHrv = filteredHrv.filter(d => {
+                        const dStr = d.timestamp_utc.split('T')[0];
+                        let passStart = sDate ? dStr >= sDate : true;
+                        let passEnd = eDate ? dStr <= eDate : true;
+                        return passStart && passEnd;
+                    });
+                    
+                    const validDates = new Set(filteredHrv.map(d => d.timestamp_utc.split('T')[0]));
+                    filteredWorkouts = filteredWorkouts.filter(w => validDates.has(w.date));
+                }
+
+                if (filteredHrv.length === 0) {
+                    alert("No data found for the selected date range.");
+                    return;
+                }
+            }
+
+            const filteredData = { hrv: filteredHrv, workouts: filteredWorkouts };
             const tx = db.transaction(['surveyData'], 'readonly');
             const surveyReq = tx.objectStore('surveyData').get('user_profile');
             
             surveyReq.onsuccess = () => {
-                const safePayload = generateAnonymizedPayload(dbData, surveyReq.result);
-                const jsonStr = JSON.stringify(safePayload, null, 2);
+                let finalPayload;
+                let filename;
+
+                if (exportType === 'summary') {
+                    // Skips date filtering entirely, runs your existing full DB summary
+                    finalPayload = generateAnonymizedPayload(dbData, surveyReq.result);
+                    filename = `neurovis_anonymous_summary_${new Date().toISOString().split('T')[0]}.json`;
+                } else {
+                    // Dumps the filtered raw data
+                    finalPayload = {
+                        export_type: "raw_details",
+                        export_date: new Date().toISOString(),
+                        user_profile: surveyReq.result || {},
+                        data: filteredData
+                    };
+                    filename = `neurovis_raw_details_${new Date().toISOString().split('T')[0]}.json`;
+                }
+
+                const jsonStr = JSON.stringify(finalPayload, null, 2);
                 const blob = new Blob([jsonStr], {type: "application/json"});
                 
-                if (confirm(`Your anonymized research payload is ready to review. Proceed with download?`)) {
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `neurovis_research_payload_${safePayload.upload_date}.json`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                }
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                closeExportModal();
             };
         } catch (err) {
             alert("Failed to export database: " + err.message);
