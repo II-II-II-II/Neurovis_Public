@@ -393,7 +393,7 @@
 
 <div class="header glass-panel">
     <div class="header-left">
-        <h2>Neurovis HRV (alpha v0.15)</h2>
+        <h2>Neurovis HRV (alpha v0.16)</h2>
         <span style="font-size:13px; color:#86868b; margin-left:10px;" id="file-status">Initializing Engine...</span>
         <span id="zoom-indicator">Zoom Active</span>
     </div>
@@ -430,9 +430,13 @@
         <h3>Avg HRV <span class="info-icon" data-tooltip="Your overall baseline Heart Rate Variability. Higher is generally better and indicates an adaptable nervous system.">?</span></h3>
         <div class="value" id="kpi-avg">-</div>
     </div>
+   <div class="kpi-card kpi-morning glass-panel">
+        <h3>Avg Readiness <span class="info-icon" data-tooltip="Average Morning Readiness Score (0-100) over the selected period.">?</span></h3>
+        <div class="value" id="kpi-avg-readiness">-</div>
+    </div>
     <div class="kpi-card kpi-morning glass-panel">
-        <h3>Morning Ready <span class="info-icon" data-tooltip="The average of your very first non-moving HRV reading after waking up. This is the truest indicator of daily readiness.">?</span></h3>
-        <div class="value" id="kpi-morning-avg">-</div>
+        <h3>Avg Resting HR <span class="info-icon" data-tooltip="Average sleeping heart rate over the selected period. Lower is generally better.">?</span></h3>
+        <div class="value" id="kpi-avg-rhr">-</div>
     </div>
     <div class="kpi-card kpi-workout glass-panel">
         <h3>Avg Time Asleep <span class="info-icon" data-tooltip="Your average total sleep duration per night across all recorded data.">?</span></h3>
@@ -462,6 +466,14 @@
         <h3>7D Min/Workout <span class="info-icon" data-tooltip="The average length of your workouts over the last 7 days.">?</span></h3>
         <div class="value" id="kpi-7d-workout-min">-</div>
     </div>
+    <div class="kpi-card kpi-7day glass-panel">
+        <h3>7D Readiness <span class="info-icon" data-tooltip="Change in average Readiness Score over the last 7 days compared to your total baseline.">?</span></h3>
+        <div class="value" id="kpi-7d-readiness">-</div>
+    </div>
+    <div class="kpi-card kpi-7day glass-panel">
+        <h3>7D Resting HR <span class="info-icon" data-tooltip="Change in average Resting HR over the last 7 days compared to your total baseline.">?</span></h3>
+        <div class="value" id="kpi-7d-rhr">-</div>
+    </div>
 </div>
 
 <div class="container">
@@ -482,8 +494,8 @@
         </div>
 
         <div class="chart-box glass-panel">
-            <h3>Morning Readiness HRV <span class="info-icon" data-tooltip="Morning Readiness isolates your baseline recovery. A stable or rising trend here indicates your nervous system is adapting well to training.">?</span></h3>
-            <p>First non-moving HRV reading after waking. The truest baseline for daily recovery.</p>
+            <h3>Morning Readiness Score <span class="info-icon" data-tooltip="Calculated daily using Deep Sleep HRV (50%), Resting HR (30%), and Sleep Duration (20%). Higher scores indicate optimal recovery and readiness to train.">?</span></h3>
+            <p>A comprehensive 0-100 score weighing your nightly recovery metrics against your personal 30-day baseline.</p>
             <div id="chart-morning" style="height: 350px;"></div>
         </div>
 
@@ -691,6 +703,8 @@
         
         let sumSleep = 0, daysSleep = 0;
         let sumWorkoutsCount = 0, sumWorkoutMin = 0;
+        let sumReadiness = 0, daysReadiness = 0;
+        let sumRHR = 0, daysRHR = 0;
         
         statsSubset.forEach(d => {
             const sumData = globalDailySummary[d.date];
@@ -698,6 +712,8 @@
                 if(sumData.sleepMin > 0) { sumSleep += sumData.sleepMin; daysSleep++; }
                 sumWorkoutsCount += sumData.workoutsCount;
                 sumWorkoutMin += sumData.workoutMin;
+                if(sumData.readinessScore) { sumReadiness += sumData.readinessScore; daysReadiness++; }
+                if(sumData.restingHR) { sumRHR += sumData.restingHR; daysRHR++; }
             }
         });
 
@@ -705,12 +721,16 @@
         const wks = totalDays / 7;
         const avgWkWorkouts = wks > 0 ? sumWorkoutsCount / wks : 0;
         const avgWkWorkoutMin = wks > 0 ? sumWorkoutMin / wks : 0;
+        const avgReadiness = daysReadiness > 0 ? sumReadiness / daysReadiness : 0;
+        const avgRHR = daysRHR > 0 ? sumRHR / daysRHR : 0;
 
         // 7 Day metrics
         const last7 = statsSubset.slice(-7);
         let l7SumSleep = 0, l7DaysSleep = 0;
         let l7SumWorkouts = 0, l7SumWorkoutMin = 0;
         let l7SumHRV = 0;
+        let l7SumReadiness = 0, l7DaysReadiness = 0;
+        let l7SumRHR = 0, l7DaysRHR = 0;
 
         last7.forEach(d => {
             l7SumHRV += d.median;
@@ -719,6 +739,8 @@
                 if(sumData.sleepMin > 0) { l7SumSleep += sumData.sleepMin; l7DaysSleep++; }
                 l7SumWorkouts += sumData.workoutsCount;
                 l7SumWorkoutMin += sumData.workoutMin;
+                if(sumData.readinessScore) { l7SumReadiness += sumData.readinessScore; l7DaysReadiness++; }
+                if(sumData.restingHR) { l7SumRHR += sumData.restingHR; l7DaysRHR++; }
             }
         });
 
@@ -729,11 +751,22 @@
         const sleepChangePct = avgSleepMin > 0 ? ((l7AvgSleep - avgSleepMin) / avgSleepMin) * 100 : 0;
         const hrvChangePct = avgHRV > 0 ? ((l7AvgHRV - avgHRV) / avgHRV) * 100 : 0;
 
+        const l7AvgReadiness = l7DaysReadiness > 0 ? l7SumReadiness / l7DaysReadiness : 0;
+        const l7AvgRHR = l7DaysRHR > 0 ? l7SumRHR / l7DaysRHR : 0;
+
+        const readinessChange = avgReadiness > 0 ? l7AvgReadiness - avgReadiness : 0;
+        const rhrChange = avgRHR > 0 ? l7AvgRHR - avgRHR : 0;
+
         const fmtPct = (val) => (val > 0 ? "+" : "") + val.toFixed(1) + "%";
+        const fmtPts = (val) => { const r = Math.round(val); return (r > 0 ? "+" : "") + r; };
+        const fmtBpm = (val) => { const r = Math.round(val); return (r > 0 ? "+" : "") + r + " bpm"; };
         const fmtHrs = (mins) => { const h = Math.floor(mins/60); const m = Math.round(mins%60); return h>0 ? `${h}h ${m}m` : `${m}m`; };
 
         document.getElementById('kpi-total').innerText = totalDays;
         document.getElementById('kpi-avg').innerText = Math.round(avgHRV) + " ms";
+        
+        document.getElementById('kpi-avg-readiness').innerText = avgReadiness > 0 ? Math.round(avgReadiness) : "-";
+        document.getElementById('kpi-avg-rhr').innerText = avgRHR > 0 ? Math.round(avgRHR) + " bpm" : "-";
         
         document.getElementById('kpi-avg-sleep').innerText = fmtHrs(avgSleepMin);
         document.getElementById('kpi-wk-workouts').innerText = avgWkWorkouts.toFixed(1);
@@ -743,6 +776,9 @@
         document.getElementById('kpi-7d-hrv').innerText = fmtPct(hrvChangePct);
         document.getElementById('kpi-7d-workouts-count').innerText = l7SumWorkouts;
         document.getElementById('kpi-7d-workout-min').innerText = Math.round(l7AvgMinPerWorkout) + " m";
+        
+        document.getElementById('kpi-7d-readiness').innerText = fmtPts(readinessChange);
+        document.getElementById('kpi-7d-rhr').innerText = fmtBpm(rhrChange);
 
         const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
         let dayHRVSums = [0,0,0,0,0,0,0];
@@ -864,52 +900,102 @@
             dayGroups[date].push(d);
         });
 
+        // 1. First Pass: Compute daily metrics
+        const dailyMetrics = {};
         Object.keys(dayGroups).sort().forEach(date => {
             const dayRecords = dayGroups[date];
-            let lastSleepIndex = -1;
+            let deepHrvSum = 0, deepHrvCount = 0;
+            let sleepHrSum = 0, sleepHrCount = 0;
             
-            for (let i = dayRecords.length - 1; i >= 0; i--) {
-                if (dayRecords[i].is_sleeping) { lastSleepIndex = i; break; }
-            }
+            dayRecords.forEach(r => {
+                if (r.is_deep_sleep) { deepHrvSum += r.rMSSD_ms; deepHrvCount++; }
+                // Use the new bpm metric for sleeping heart rate
+                if (r.is_sleeping && r.bpm > 0) { sleepHrSum += r.bpm; sleepHrCount++; } 
+            });
             
-            let morningRecord = null;
-            if (lastSleepIndex !== -1) {
-                for (let i = lastSleepIndex + 1; i < dayRecords.length; i++) {
-                    if (!dayRecords[i].is_moving && !dayRecords[i].is_workout_window) {
-                        morningRecord = dayRecords[i];
-                        break;
-                    }
-                }
-            } else {
-                morningRecord = dayRecords.find(d => {
-                    const hr = new Date(d.timestamp_utc).getHours();
-                    return hr >= 4 && hr <= 10 && !d.is_moving;
-                });
-            }
+            const firstRec = dayRecords[0];
+            // Combining sleep stages to evaluate against the 7.5 hr (450 min) target
+            const sleepTotalMin = (firstRec.sleep_core_min || 0) + (firstRec.sleep_deep_min || 0) + (firstRec.sleep_rem_min || 0);
+            
+            dailyMetrics[date] = {
+                date: date,
+                deepHrv: deepHrvCount > 0 ? deepHrvSum / deepHrvCount : null,
+                sleepHr: sleepHrCount > 0 ? sleepHrSum / sleepHrCount : null,
+                sleepMin: sleepTotalMin
+            };
+        });
 
-            if (morningRecord) {
+        // 2. Second Pass: Calculate rolling baselines & final Readiness Score
+        const sortedDates = Object.keys(dailyMetrics).sort();
+        
+        sortedDates.forEach((date, index) => {
+            const current = dailyMetrics[date];
+            
+            let baseHrvSum = 0, baseHrvCount = 0;
+            let baseHrSum = 0, baseHrCount = 0;
+            
+            // Look back up to 30 days
+            for (let i = Math.max(0, index - 30); i < index; i++) {
+                const past = dailyMetrics[sortedDates[i]];
+                if (past.deepHrv) { baseHrvSum += past.deepHrv; baseHrvCount++; }
+                if (past.sleepHr) { baseHrSum += past.sleepHr; baseHrCount++; }
+            }
+            
+            // Fallback to current values if no history exists (e.g., Day 1)
+            const baselineHrv = baseHrvCount > 0 ? baseHrvSum / baseHrvCount : current.deepHrv || 40; 
+            const baselineHr = baseHrCount > 0 ? baseHrSum / baseHrCount : current.sleepHr || 60; 
+            
+            if (current.deepHrv && current.sleepHr) {
+                // HRV (50%): Current / Baseline. (Cap at 1.2x to prevent runaway scores)
+                const hrvRatio = Math.min(1.2, current.deepHrv / baselineHrv) / 1.2;
+                const hrvScore = 50 * hrvRatio;
+                
+                // Resting HR (30%): Baseline / Current. (Lower is better)
+                const hrRatio = Math.min(1.2, baselineHr / current.sleepHr) / 1.2;
+                const hrScore = 30 * hrRatio;
+                
+                // Sleep (20%): Current / 450 mins (7.5 hours)
+                const sleepRatio = Math.min(1.0, current.sleepMin / 450);
+                const sleepScore = 20 * sleepRatio;
+                
+                const totalScore = hrvScore + hrScore + sleepScore;
+                
                 morningDates.push(date);
-                morningVals.push(morningRecord.rMSSD_ms);
+                morningVals.push(Math.round(totalScore));
+
+                if (!globalDailySummary[date]) {
+                    globalDailySummary[date] = { sleepMin: 0, workoutMin: 0, workoutsCount: 0, medianHRV: 0 };
+                }
+                globalDailySummary[date].readinessScore = Math.round(totalScore);
+                globalDailySummary[date].restingHR = current.sleepHr;
             }
         });
 
-        const avgMorning = morningVals.length > 0 ? (morningVals.reduce((a,b)=>a+b,0) / morningVals.length) : 0;
-        document.getElementById('kpi-morning-avg').innerText = avgMorning > 0 ? Math.round(avgMorning) + " ms" : "-";
-
         const traceMorning = {
             x: morningDates, y: morningVals,
-            type: 'bar', name: 'Morning HRV',
+            type: 'bar', name: 'Readiness Score',
             marker: { color: '#5ac8fa', line: { color: '#007aff', width: 1 } }
+        };
+
+        const readinessTrendY = [];
+        for(let i = 0; i < morningVals.length; i++) {
+            if(i < 7) { readinessTrendY.push(null); continue; }
+            let sum = 0; 
+            for(let j = 0; j < 7; j++) sum += morningVals[i-j];
+            readinessTrendY.push(sum / 7);
+        }
+
+        const traceMorningTrend = {
+            x: morningDates, y: readinessTrendY,
+            type: 'scatter', mode: 'lines', name: '7-Day Trend',
+            line: { color: '#1d1d1f', width: 2.5 }
         };
         
         baseShapesMap['chart-morning'] = [];
-        if (globalUpper) {
-             baseShapesMap['chart-morning'].push({ type: 'line', x0: 0, x1: 1, xref: 'paper', y0: globalUpper, y1: globalUpper, line: { color: '#34c759', width: 1.5, dash: 'dash' } }); 
-        }
 
-        Plotly.newPlot('chart-morning', [traceMorning], {
+        Plotly.newPlot('chart-morning', [traceMorning, traceMorningTrend], {
             ...transparentLayout,
-            yaxis: { title: 'HRV (ms)', range: [0, 150], gridcolor: 'rgba(0,0,0,0.05)' },
+            yaxis: { title: 'Score', range: [0, 100], gridcolor: 'rgba(0,0,0,0.05)' },
             xaxis: { gridcolor: 'rgba(0,0,0,0)' },
             shapes: [...baseShapesMap['chart-morning']]
         }, {responsive: true});
@@ -1617,7 +1703,8 @@ def process_zip_stream(zip_bytes, last_sync_str):
                             
                             if len(clean_rr) >= 3:
                                 rmssd = np.sqrt(np.mean(np.diff(clean_rr) ** 2))
-                                hrv_events.append({'timestamp': current_record_start, 'timestamp_str': current_record_start.isoformat(), 'rMSSD_ms': round(rmssd, 2) })
+                                avg_bpm = sum(current_beats) / len(current_beats) if len(current_beats) > 0 else 0
+                                hrv_events.append({'timestamp': current_record_start, 'timestamp_str': current_record_start.isoformat(), 'rMSSD_ms': round(rmssd, 2), 'bpm': round(avg_bpm, 1) })
                         in_hrv_block = False
                         current_beats = []
 
@@ -1716,6 +1803,7 @@ def process_zip_stream(zip_bytes, last_sync_str):
         pre_calc_log.append({
             "timestamp_utc": event['timestamp_str'],
             "rMSSD_ms": float(event['rMSSD_ms']),
+            "bpm": float(event.get('bpm', 0)),
             "is_moving": bool(is_moving),
             "is_afib_day": bool(event.get('is_afib_day', False)),
             "is_workout_window": bool(is_workout_window),

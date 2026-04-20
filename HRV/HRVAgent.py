@@ -17,7 +17,7 @@ import matplotlib
 matplotlib.use('Agg') 
 import matplotlib.pyplot as plt
 
-# Suppress pandas chained assignment warnings for cleaner terminal output
+# Suppress pandas chained assignment warnings
 warnings.filterwarnings('ignore')
 
 # Global DataFrames
@@ -29,7 +29,6 @@ available_workout_columns = []
 # --- PART 1: THE ROBUST PARAMETERIZED TOOLS ---
 
 def generate_biometric_chart(metric1: str, metric2: str = None) -> str:
-    """Generates a line graph of the requested metrics over time and saves it as an image."""
     global df_hrv, df_workouts
     try:
         if metric1 in available_hrv_columns:
@@ -62,7 +61,7 @@ def generate_biometric_chart(metric1: str, metric2: str = None) -> str:
         plt.savefig(filename)
         plt.close()
         
-        return f"Successfully generated a chart and saved it locally as '{filename}'. Tell the user to open this file."
+        return f"Successfully generated a chart and saved it locally as '{filename}'."
         
     except Exception as e:
         return f"Failed to generate chart: {e}"
@@ -70,8 +69,7 @@ def generate_biometric_chart(metric1: str, metric2: str = None) -> str:
 def analyze_biometric_data(
     metric: str, 
     analysis_type: Literal[
-        'count', # <--- 1. ADD 'count' HERE
-        'highest_date', 'lowest_date', 
+        'count', 'highest_date', 'lowest_date', 
         'overall_max', 'overall_min', 'overall_average', 'correlation', 
         'trend_slope', 'day_of_week_average'
     ], 
@@ -87,9 +85,9 @@ def analyze_biometric_data(
             working_df = df_workouts.copy()
         else:
             return f"Error: '{metric}' is not a valid column."
+
         if start_date and end_date:
             try:
-                # Convert both dates to standard YYYY-MM-DD
                 s_date = pd.to_datetime(start_date).date()
                 e_date = pd.to_datetime(end_date).date()
                 working_df = working_df[(working_df['date'] >= s_date) & (working_df['date'] <= e_date)]
@@ -100,8 +98,8 @@ def analyze_biometric_data(
 
         if analysis_type == 'count':
             return f"There are {len(working_df)} total data points for {metric} in this period."
-
-        if analysis_type == 'correlation':
+            
+        elif analysis_type == 'correlation':
             if not metric2:
                 return "Error: You must provide 'metric2'."
             if metric2 not in working_df.columns:
@@ -150,7 +148,6 @@ def calculate_statistical_significance(
     start_date_1: str, end_date_1: str, 
     start_date_2: str, end_date_2: str
 ) -> str:
-    """Calculates the p-value (statistical significance) of a metric between two date ranges."""
     global df_hrv, df_workouts
     try:
         if metric in available_hrv_columns:
@@ -170,7 +167,6 @@ def calculate_statistical_significance(
             return "Not enough data points to calculate statistical significance."
 
         t_stat, p_val = stats.ttest_ind(group1, group2, equal_var=False)
-        
         significance = "Statistically Significant" if p_val < 0.05 else "Not Statistically Significant"
         return f"The p-value for {metric} between the two periods is {p_val:.4f}. This is {significance}."
     except Exception as e:
@@ -178,7 +174,6 @@ def calculate_statistical_significance(
 
 # --- DEEP ANALYSIS PANDAS ENGINE ---
 def get_deep_period_stats(start_date_str, end_date_str):
-    """Generates a massive statistical payload and returns raw data for differential math."""
     global df_hrv, df_workouts
     
     start = pd.to_datetime(start_date_str, format="%m-%d-%Y").date()
@@ -187,9 +182,8 @@ def get_deep_period_stats(start_date_str, end_date_str):
     mask_hrv = (df_hrv['date'] >= start) & (df_hrv['date'] <= end)
     period_hrv = df_hrv.loc[mask_hrv].copy()
     
-    # Initialize defaults
     raw_stats = {
-        "avg_morn": 0, "cv_morn": 0, "avg_rhr": 0, "avg_deep": 0, "avg_core": 0,
+        "avg_morn": 0, "cv_morn": 0, "avg_deep": 0, "avg_core": 0,
         "workout_count": 0, "avg_workout_dur": 0, "avg_recovery": 0
     }
     
@@ -201,11 +195,6 @@ def get_deep_period_stats(start_date_str, end_date_str):
             raw_stats["avg_morn"] = morning_readings['rMSSD_ms'].mean()
             if len(morning_readings) > 1 and raw_stats["avg_morn"] > 0:
                 raw_stats["cv_morn"] = (morning_readings['rMSSD_ms'].std() / raw_stats["avg_morn"]) * 100
-                
-            if 'hr' in morning_readings.columns:
-                raw_stats["avg_rhr"] = morning_readings['hr'].mean()
-            elif 'val' in morning_readings.columns:
-                raw_stats["avg_rhr"] = morning_readings['val'].mean()
 
         raw_stats["avg_deep"] = period_hrv[period_hrv['is_deep_sleep']]['rMSSD_ms'].mean()
         raw_stats["avg_core"] = period_hrv[period_hrv['is_sleeping']]['rMSSD_ms'].mean()
@@ -229,7 +218,6 @@ def get_deep_period_stats(start_date_str, end_date_str):
     report = f"""
     PERIOD: {start_date_str} to {end_date_str}
     - Morning Readiness (rMSSD): {raw_stats["avg_morn"]:.1f}ms (CV: {raw_stats["cv_morn"]:.1f}%)
-    - Resting Heart Rate (Morning): {raw_stats["avg_rhr"]:.1f} bpm
     - Deep Sleep HRV: {raw_stats["avg_deep"]:.1f}ms
     - Core Sleep HRV: {raw_stats["avg_core"]:.1f}ms
     - Day of Week Averages: {dow_avgs if not period_hrv.empty else 'N/A'}
@@ -241,10 +229,8 @@ def get_deep_period_stats(start_date_str, end_date_str):
     return report, raw_stats
 
 def format_percentage_diff(metric_name, val1, val2, unit=""):
-    """Calculates and formats the percentage shift between two values."""
     if val1 == 0 or pd.isna(val1) or pd.isna(val2):
         return f"- {metric_name}: N/A (Missing data)"
-    
     pct_change = ((val2 - val1) / val1) * 100
     direction = "Increased" if pct_change > 0 else "Decreased"
     return f"- {metric_name}: {direction} by {abs(pct_change):.2f}% (from {val1:.1f}{unit} to {val2:.1f}{unit})"
@@ -313,7 +299,6 @@ async def main():
     
     DOMAIN GLOSSARY:
     - "HRV" -> 'rMSSD_ms'
-    - "Heart Rate" / "Resting HR" -> 'hr' or 'val'
     - "Workout Duration" -> 'duration_min'
     """
 
@@ -338,24 +323,20 @@ async def main():
             r1_start, r1_end = range1.split()
             r2_start, r2_end = range2.split()
             
-            # Reformat to YYYY-MM-DD for standardizing API/tool calls
             r1_s_fmt = pd.to_datetime(r1_start).strftime("%Y-%m-%d")
             r1_e_fmt = pd.to_datetime(r1_end).strftime("%Y-%m-%d")
             r2_s_fmt = pd.to_datetime(r2_start).strftime("%Y-%m-%d")
             r2_e_fmt = pd.to_datetime(r2_end).strftime("%Y-%m-%d")
 
-            # --- INJECT MEMORY INTO AGENT ---
             memory_injection = f"CRITICAL CONTEXT: The user is currently analyzing Period 1 ({r1_s_fmt} to {r1_e_fmt}) and Period 2 ({r2_s_fmt} to {r2_e_fmt}). If they ask to compare these periods, YOU MUST use these exact YYYY-MM-DD dates in your tool parameters."
             chat_history.append(ChatMessage(role="system", content=memory_injection))
 
             stats1_report, raw1 = get_deep_period_stats(r1_start, r1_end)
             stats2_report, raw2 = get_deep_period_stats(r2_start, r2_end)
             
-            # --- CALCULATE ALL PERCENTAGE DIFFERENTIALS ---
             differentials_block = "\n".join([
                 format_percentage_diff("Morning Readiness (rMSSD)", raw1['avg_morn'], raw2['avg_morn'], "ms"),
                 format_percentage_diff("Baseline Stability (CV)", raw1['cv_morn'], raw2['cv_morn'], "%"),
-                format_percentage_diff("Resting Heart Rate", raw1['avg_rhr'], raw2['avg_rhr'], " bpm"),
                 format_percentage_diff("Deep Sleep HRV", raw1['avg_deep'], raw2['avg_deep'], "ms"),
                 format_percentage_diff("Core Sleep HRV", raw1['avg_core'], raw2['avg_core'], "ms"),
                 format_percentage_diff("Total Workout Count", raw1['workout_count'], raw2['workout_count'], ""),
@@ -363,18 +344,16 @@ async def main():
                 format_percentage_diff("Post-Workout Recovery Time", raw1['avg_recovery'], raw2['avg_recovery'], " min")
             ])
 
-            # 1. Deep Sleep p-value
             ds1 = df_hrv[(df_hrv['date'] >= pd.to_datetime(r1_start).date()) & (df_hrv['date'] <= pd.to_datetime(r1_end).date()) & (df_hrv['is_deep_sleep'])]['rMSSD_ms'].dropna()
             ds2 = df_hrv[(df_hrv['date'] >= pd.to_datetime(r2_start).date()) & (df_hrv['date'] <= pd.to_datetime(r2_end).date()) & (df_hrv['is_deep_sleep'])]['rMSSD_ms'].dropna()
             _, p_deep = stats.ttest_ind(ds1, ds2, equal_var=False) if len(ds1) > 1 and len(ds2) > 1 else (0, 1)
 
-            # 2. Recovery Time p-value
             rt1 = df_workouts[(df_workouts['date'] >= pd.to_datetime(r1_start).date()) & (df_workouts['date'] <= pd.to_datetime(r1_end).date())]['recovery_time_min'].dropna()
             rt2 = df_workouts[(df_workouts['date'] >= pd.to_datetime(r2_start).date()) & (df_workouts['date'] <= pd.to_datetime(r2_end).date())]['recovery_time_min'].dropna()
             _, p_rec = stats.ttest_ind(rt1, rt2, equal_var=False) if len(rt1) > 1 and len(rt2) > 1 else (0, 1)
             
             analysis_prompt = f"""
-            You are a clinical neuro-analyst. I am performing a 21-day intervention to improve my autonomic nervous system. 
+            You are a clinical neuro-analyst. I am performing an intervention to improve my autonomic nervous system. 
             
             {stats1_report}
             
@@ -388,7 +367,7 @@ async def main():
             - The p-value for the shift in Post-Workout Recovery Time is {p_rec:.4f}.
             
             Perform a highly detailed clinical comparison between these two periods. Specifically address:
-            1. Baseline Stability (CV), Morning Readiness, and Resting Heart Rate. Reference the exact percentage shifts.
+            1. Baseline Stability (CV) and Morning Readiness. Reference the exact percentage shifts.
             2. Parasympathetic recovery during Deep vs. Core sleep. Reference the percentage shifts.
             3. Circadian alignment based on the Time of Day averages.
             4. Behavioral strain based on the Day of Week averages.
@@ -416,7 +395,6 @@ async def main():
             break
             
         try:
-            # Softer prompt anchor so the agent utilizes the dates injected into its memory
             anchored_question = f"CONTEXT: Use the chat history to understand references to 'Period 1' or 'Period 2'.\nNEW QUESTION: {user_question}"
             response = await agent.run(user_msg=anchored_question, chat_history=chat_history)
             
