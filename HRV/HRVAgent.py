@@ -24,7 +24,16 @@ warnings.filterwarnings('ignore')
 df_hrv = pd.DataFrame()
 df_workouts = pd.DataFrame()
 available_hrv_columns = []
-available_workout_columns = []
+morning_readings = pd.DataFrame()
+
+# ==========================================
+#  AI ENGINE CONFIGURATION (GLOBAL)
+# ==========================================
+print(" Initializing AI Engine...")
+llm = Ollama(model="qwen2.5", request_timeout=360.0) 
+Settings.llm = llm
+Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+# ==========================================
 
 # --- PART 1: THE ROBUST PARAMETERIZED TOOLS ---
 
@@ -174,7 +183,7 @@ def calculate_statistical_significance(
 
 # --- DEEP ANALYSIS PANDAS ENGINE ---
 def get_deep_period_stats(start_date_str, end_date_str):
-    global df_hrv, df_workouts
+    global df_hrv, df_workouts, morning_readings
     
     start = pd.to_datetime(start_date_str, format="%m-%d-%Y").date()
     end = pd.to_datetime(end_date_str, format="%m-%d-%Y").date()
@@ -184,17 +193,23 @@ def get_deep_period_stats(start_date_str, end_date_str):
     
     raw_stats = {
         "avg_morn": 0, "cv_morn": 0, "avg_deep": 0, "avg_core": 0,
+        "avg_resting_hr": 0,
         "workout_count": 0, "avg_workout_dur": 0, "avg_recovery": 0
     }
     
     if not period_hrv.empty:
+        sleep_hr_df = period_hrv[(period_hrv['is_sleeping']) & (period_hrv['bpm'] > 0)]
+        if not sleep_hr_df.empty:
+            raw_stats["avg_resting_hr"] = sleep_hr_df['bpm'].mean()
+            
         clean_hrv = period_hrv[(~period_hrv['is_moving']) & (~period_hrv['is_workout_window'])]
-        morning_readings = clean_hrv.groupby('date').first()
         
         if not morning_readings.empty:
-            raw_stats["avg_morn"] = morning_readings['rMSSD_ms'].mean()
-            if len(morning_readings) > 1 and raw_stats["avg_morn"] > 0:
-                raw_stats["cv_morn"] = (morning_readings['rMSSD_ms'].std() / raw_stats["avg_morn"]) * 100
+            period_morn = morning_readings[(morning_readings['date'] >= start) & (morning_readings['date'] <= end)]
+            if not period_morn.empty:
+                raw_stats["avg_morn"] = period_morn['score'].mean()
+                if len(period_morn) > 1 and raw_stats["avg_morn"] > 0:
+                    raw_stats["cv_morn"] = (period_morn['score'].std() / raw_stats["avg_morn"]) * 100
 
         raw_stats["avg_deep"] = period_hrv[period_hrv['is_deep_sleep']]['rMSSD_ms'].mean()
         raw_stats["avg_core"] = period_hrv[period_hrv['is_sleeping']]['rMSSD_ms'].mean()
@@ -220,6 +235,7 @@ def get_deep_period_stats(start_date_str, end_date_str):
     - Morning Readiness (rMSSD): {raw_stats["avg_morn"]:.1f}ms (CV: {raw_stats["cv_morn"]:.1f}%)
     - Deep Sleep HRV: {raw_stats["avg_deep"]:.1f}ms
     - Core Sleep HRV: {raw_stats["avg_core"]:.1f}ms
+    - Avg Resting HR: {raw_stats["avg_resting_hr"]:.1f} bpm
     - Day of Week Averages: {dow_avgs if not period_hrv.empty else 'N/A'}
     - Time of Day Averages: {tod_avgs if not period_hrv.empty else 'N/A'}
     - Total Workouts: {raw_stats["workout_count"]}
@@ -234,6 +250,85 @@ def format_percentage_diff(metric_name, val1, val2, unit=""):
     pct_change = ((val2 - val1) / val1) * 100
     direction = "Increased" if pct_change > 0 else "Decreased"
     return f"- {metric_name}: {direction} by {abs(pct_change):.2f}% (from {val1:.1f}{unit} to {val2:.1f}{unit})"
+
+
+def run_deep_clinical_analysis(start_date_1: str, end_date_1: str, start_date_2: str, end_date_2: str) -> str:
+    """
+    Performs a comprehensive clinical comparison and statistical assessment between two date ranges.
+    Trigger this tool when the user asks to compare two periods, do a deep analysis, or run a full assessment.
+    Input formats must be 'YYYY-MM-DD' or 'MM-DD-YYYY'.
+    """
+    global df_hrv, df_workouts, morning_readings, llm
+    
+    try:
+        # Standardize dates for the get_deep_period_stats function
+        r1_start = pd.to_datetime(start_date_1).strftime("%m-%d-%Y")
+        r1_end = pd.to_datetime(end_date_1).strftime("%m-%d-%Y")
+        r2_start = pd.to_datetime(start_date_2).strftime("%m-%d-%Y")
+        r2_end = pd.to_datetime(end_date_2).strftime("%m-%d-%Y")
+
+        stats1_report, raw1 = get_deep_period_stats(r1_start, r1_end)
+        stats2_report, raw2 = get_deep_period_stats(r2_start, r2_end)
+        
+        differentials_block = "\n".join([
+            format_percentage_diff("Morning Readiness Score", raw1['avg_morn'], raw2['avg_morn'], ""),
+            format_percentage_diff("Baseline Stability (CV)", raw1['cv_morn'], raw2['cv_morn'], "%"),
+            format_percentage_diff("Deep Sleep HRV", raw1['avg_deep'], raw2['avg_deep'], "ms"),
+            format_percentage_diff("Core Sleep HRV", raw1['avg_core'], raw2['avg_core'], "ms"),
+            format_percentage_diff("Average Resting HR", raw1['avg_resting_hr'], raw2['avg_resting_hr'], " bpm"),
+            format_percentage_diff("Total Workout Count", raw1['workout_count'], raw2['workout_count'], ""),
+            format_percentage_diff("Avg Workout Duration", raw1['avg_workout_dur'], raw2['avg_workout_dur'], " min"),
+            format_percentage_diff("Post-Workout Recovery Time", raw1['avg_recovery'], raw2['avg_recovery'], " min")
+        ])
+
+        ds1 = df_hrv[(df_hrv['date'] >= pd.to_datetime(r1_start).date()) & (df_hrv['date'] <= pd.to_datetime(r1_end).date()) & (df_hrv['is_deep_sleep'])]['rMSSD_ms'].dropna()
+        ds2 = df_hrv[(df_hrv['date'] >= pd.to_datetime(r2_start).date()) & (df_hrv['date'] <= pd.to_datetime(r2_end).date()) & (df_hrv['is_deep_sleep'])]['rMSSD_ms'].dropna()
+        _, p_deep = stats.ttest_ind(ds1, ds2, equal_var=False) if len(ds1) > 1 and len(ds2) > 1 else (0, 1)
+
+        rt1 = df_workouts[(df_workouts['date'] >= pd.to_datetime(r1_start).date()) & (df_workouts['date'] <= pd.to_datetime(r1_end).date())]['recovery_time_min'].dropna()
+        rt2 = df_workouts[(df_workouts['date'] >= pd.to_datetime(r2_start).date()) & (df_workouts['date'] <= pd.to_datetime(r2_end).date())]['recovery_time_min'].dropna()
+        _, p_rec = stats.ttest_ind(rt1, rt2, equal_var=False) if len(rt1) > 1 and len(rt2) > 1 else (0, 1)
+
+        hr1 = df_hrv[(df_hrv['date'] >= pd.to_datetime(r1_start).date()) & (df_hrv['date'] <= pd.to_datetime(r1_end).date()) & (df_hrv['is_sleeping']) & (df_hrv['bpm'] > 0)]['bpm'].dropna()
+        hr2 = df_hrv[(df_hrv['date'] >= pd.to_datetime(r2_start).date()) & (df_hrv['date'] <= pd.to_datetime(r2_end).date()) & (df_hrv['is_sleeping']) & (df_hrv['bpm'] > 0)]['bpm'].dropna()
+        _, p_hr = stats.ttest_ind(hr1, hr2, equal_var=False) if len(hr1) > 1 and len(hr2) > 1 else (0, 1)
+        
+        analysis_prompt = f"""
+        You are a clinical neuro-analyst. I am performing an intervention to improve my autonomic nervous system. 
+        
+        {stats1_report}
+        
+        {stats2_report}
+
+        ABSOLUTE PERCENTAGE SHIFTS (Period 1 to Period 2):
+        {differentials_block}
+
+        STATISTICAL SIGNIFICANCE (Welch's t-test):
+        - The p-value for the shift in Deep Sleep HRV is {p_deep:.4f}.
+        - The p-value for the shift in Post-Workout Recovery Time is {p_rec:.4f}.
+        - The p-value for the shift in Resting Heart Rate is {p_hr:.4f}.
+        
+        CRITICAL GUARDRAIL: If Morning Readiness Score is 0 or "Missing data", you MUST explicitly state this is because "the 30-day rolling baseline requires 30 days of historical data to calculate mathematically," and NOT because the user failed to wear the device.
+
+        Perform a highly detailed clinical comparison between these two periods. Specifically address:
+        1. Baseline Stability (CV), Morning Readiness, and Resting HR. Reference the exact percentage shifts.
+        2. Parasympathetic recovery during Deep vs. Core sleep. Reference the percentage shifts.
+        3. Circadian alignment based on the Time of Day averages.
+        4. Behavioral strain based on the Day of Week averages.
+        5. Autonomic recovery efficiency based on the Workout metrics. Reference the percentage shifts.
+        6. Explicitly state the p-values and what a statistically significant shift means for physiological homeostasis.
+        
+        Format your response cleanly with markdown headers. Conclude decisively if the intervention improved systemic homeostasis.
+        """
+        
+        print(f"\n[*] Pumping massive statistical payload to Qwen for {start_date_1} vs {start_date_2}...")
+        response = llm.complete(analysis_prompt)
+        return f"================ DEEP ANALYSIS REPORT ================\n\n{response.text}\n\n================================================="
+        
+    except Exception as e:
+        return f"[!] Error processing ranges: {e}"
+
+
 
 # --- PART 2: INITIALIZATION & MAIN LOOP ---
 
@@ -253,14 +348,18 @@ async def main():
         print(f"[!] File not found: {file_path}")
         return
 
-    print("📊 Loading biometric data into Pandas DataFrames...")
+    print(" Loading biometric data into Pandas DataFrames...")
     with open(file_path, 'r') as f:
         payload = json.load(f)
         data = payload.get('data', payload)
         
         df_hrv = pd.DataFrame(data.get('hrv', []))
         df_workouts = pd.DataFrame(data.get('workouts', []))
+        morning_readings = pd.DataFrame(payload.get('morning_readings', []))
         
+        if not morning_readings.empty:
+            morning_readings['date'] = pd.to_datetime(morning_readings['date']).dt.date
+            
         if not df_hrv.empty:
             df_hrv['timestamp'] = pd.to_datetime(df_hrv['timestamp_utc'])
             df_hrv['date'] = df_hrv['timestamp'].dt.date
@@ -281,30 +380,33 @@ async def main():
         end_date (str, optional): The end date for filtering data, format YYYY-MM-DD.
     """
 
+    # 1. Initialize Tools
     chart_tool = FunctionTool.from_defaults(fn=generate_biometric_chart)
     data_tool = FunctionTool.from_defaults(fn=analyze_biometric_data)
     stats_tool = FunctionTool.from_defaults(fn=calculate_statistical_significance)
+    deep_analysis_tool = FunctionTool.from_defaults(fn=run_deep_clinical_analysis) # <--- ADDED THIS
 
-    print("🧠 AI Initialized...")
-    llm = Ollama(model="qwen2.5", request_timeout=180.0)
-    Settings.llm = llm
-    Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
-
+    # 2. Define System Prompt
     neurovis_system_prompt = """
     You are the Neurovis Data Analyst, a highly specialized AI running locally.
     CRITICAL RULES:
     1. You DO NOT write raw Python or Pandas code. You must ONLY use the tools provided to you.
     2. If the user asks for a chart or graph, use the `generate_biometric_chart` tool.
     3. If the user asks if something is statistically significant, use the `calculate_statistical_significance` tool.
+    4. If the user asks for a deep clinical comparison between two dates, use the `run_deep_clinical_analysis` tool.
+    5. STRICT METRIC GUARDRAIL: If the user asks about a metric NOT in the glossary (like Blood Pressure, VO2 Max, or SpO2), you MUST explicitly refuse and state that Neurovis does not track that metric. DO NOT confuse 'bpm' (heart rate) with blood pressure.
+    6. STRICT DATA GUARDRAIL: If a tool returns 0, NaN, or "missing data" for a requested time period, you MUST explicitly state that no data exists for those dates. Do not claim "there was no significant change" if the data is simply missing.
     
     DOMAIN GLOSSARY:
     - "HRV" -> 'rMSSD_ms'
+    - "Heart Rate" -> 'bpm'
     - "Workout Duration" -> 'duration_min'
     """
 
+    # 3. Setup Agent
     print("🚦 Setting up the ReAct Agent...")
     agent = ReActAgent(
-        tools=[data_tool, chart_tool, stats_tool],
+        tools=[data_tool, chart_tool, stats_tool, deep_analysis_tool], # <--- ADDED TO LIST
         llm=llm,
         system_prompt=neurovis_system_prompt,
         verbose=True,
@@ -313,78 +415,34 @@ async def main():
 
     chat_history = [] 
 
-    analyze_choice = input("\nDo you want to do deep analysis between two date ranges? (yes/no):\n").strip().lower()
+    print("\n🚀 ReAct Agent Ready! Type 'exit' or 'quit' to stop.")
     
-    if analyze_choice in ['yes', 'y']:
+    while True:
+        user_question = input("\nAsk Neurovis: ")
+        if user_question.lower() in ['exit', 'quit']:
+            print("Shutting down...")
+            break
+            
         try:
-            range1 = input("\nAsk start range (MM-DD-YYYY MM-DD-YYYY):\n").strip()
-            range2 = input("\nAsk end range (MM-DD-YYYY MM-DD-YYYY):\n").strip()
+            anchored_question = f"CONTEXT: Use the chat history to understand references to 'Period 1' or 'Period 2'.\nNEW QUESTION: {user_question}"
+            response = await agent.run(user_msg=anchored_question, chat_history=chat_history)
             
-            r1_start, r1_end = range1.split()
-            r2_start, r2_end = range2.split()
+            if isinstance(response, dict) and "response" in response:
+                final_answer = str(response["response"])
+            else:
+                final_answer = str(response)
+                
+            print(f"\n🤖 Answer: {final_answer}")
             
-            r1_s_fmt = pd.to_datetime(r1_start).strftime("%Y-%m-%d")
-            r1_e_fmt = pd.to_datetime(r1_end).strftime("%Y-%m-%d")
-            r2_s_fmt = pd.to_datetime(r2_start).strftime("%Y-%m-%d")
-            r2_e_fmt = pd.to_datetime(r2_end).strftime("%Y-%m-%d")
-
-            memory_injection = f"CRITICAL CONTEXT: The user is currently analyzing Period 1 ({r1_s_fmt} to {r1_e_fmt}) and Period 2 ({r2_s_fmt} to {r2_e_fmt}). If they ask to compare these periods, YOU MUST use these exact YYYY-MM-DD dates in your tool parameters."
-            chat_history.append(ChatMessage(role="system", content=memory_injection))
-
-            stats1_report, raw1 = get_deep_period_stats(r1_start, r1_end)
-            stats2_report, raw2 = get_deep_period_stats(r2_start, r2_end)
-            
-            differentials_block = "\n".join([
-                format_percentage_diff("Morning Readiness (rMSSD)", raw1['avg_morn'], raw2['avg_morn'], "ms"),
-                format_percentage_diff("Baseline Stability (CV)", raw1['cv_morn'], raw2['cv_morn'], "%"),
-                format_percentage_diff("Deep Sleep HRV", raw1['avg_deep'], raw2['avg_deep'], "ms"),
-                format_percentage_diff("Core Sleep HRV", raw1['avg_core'], raw2['avg_core'], "ms"),
-                format_percentage_diff("Total Workout Count", raw1['workout_count'], raw2['workout_count'], ""),
-                format_percentage_diff("Avg Workout Duration", raw1['avg_workout_dur'], raw2['avg_workout_dur'], " min"),
-                format_percentage_diff("Post-Workout Recovery Time", raw1['avg_recovery'], raw2['avg_recovery'], " min")
-            ])
-
-            ds1 = df_hrv[(df_hrv['date'] >= pd.to_datetime(r1_start).date()) & (df_hrv['date'] <= pd.to_datetime(r1_end).date()) & (df_hrv['is_deep_sleep'])]['rMSSD_ms'].dropna()
-            ds2 = df_hrv[(df_hrv['date'] >= pd.to_datetime(r2_start).date()) & (df_hrv['date'] <= pd.to_datetime(r2_end).date()) & (df_hrv['is_deep_sleep'])]['rMSSD_ms'].dropna()
-            _, p_deep = stats.ttest_ind(ds1, ds2, equal_var=False) if len(ds1) > 1 and len(ds2) > 1 else (0, 1)
-
-            rt1 = df_workouts[(df_workouts['date'] >= pd.to_datetime(r1_start).date()) & (df_workouts['date'] <= pd.to_datetime(r1_end).date())]['recovery_time_min'].dropna()
-            rt2 = df_workouts[(df_workouts['date'] >= pd.to_datetime(r2_start).date()) & (df_workouts['date'] <= pd.to_datetime(r2_end).date())]['recovery_time_min'].dropna()
-            _, p_rec = stats.ttest_ind(rt1, rt2, equal_var=False) if len(rt1) > 1 and len(rt2) > 1 else (0, 1)
-            
-            analysis_prompt = f"""
-            You are a clinical neuro-analyst. I am performing an intervention to improve my autonomic nervous system. 
-            
-            {stats1_report}
-            
-            {stats2_report}
-
-            ABSOLUTE PERCENTAGE SHIFTS (Period 1 to Period 2):
-            {differentials_block}
-
-            STATISTICAL SIGNIFICANCE (Welch's t-test):
-            - The p-value for the shift in Deep Sleep HRV is {p_deep:.4f}.
-            - The p-value for the shift in Post-Workout Recovery Time is {p_rec:.4f}.
-            
-            Perform a highly detailed clinical comparison between these two periods. Specifically address:
-            1. Baseline Stability (CV) and Morning Readiness. Reference the exact percentage shifts.
-            2. Parasympathetic recovery during Deep vs. Core sleep. Reference the percentage shifts.
-            3. Circadian alignment based on the Time of Day averages.
-            4. Behavioral strain based on the Day of Week averages.
-            5. Autonomic recovery efficiency based on the Workout metrics. Reference the percentage shifts.
-            6. Explicitly state the p-values and what a statistically significant shift means for physiological homeostasis.
-            
-            Format your response cleanly with markdown headers. Conclude decisively if the intervention improved systemic homeostasis.
-            """
-            
-            print("\n[*] Pumping massive statistical payload to Qwen...\n")
-            response = llm.complete(analysis_prompt)
-            print("\n================ DEEP ANALYSIS REPORT ================\n")
-            print(response.text)
-            print("\n=================================================")
+            chat_history.append(ChatMessage(role="user", content=user_question))
+            chat_history.append(ChatMessage(role="assistant", content=final_answer))
             
         except Exception as e:
-            print(f"[!] Error processing ranges: {e}")
+            print(f"\n❌ Error: {e}")
+
+    chat_history = [] 
+
+    
 
     print("\n🚀 ReAct Agent Ready! Type 'exit' or 'quit' to stop.")
     
