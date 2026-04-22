@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Neurovis HRV</title>
     <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
     <style>
@@ -16,9 +17,11 @@
             -webkit-font-smoothing: antialiased;
         }
 
-        .container { max-width: 1400px; margin: 0 auto; display: flex; gap: 24px; align-items: flex-start; }
-        .main-col { flex: 3; min-width: 0; }
-        .side-col { flex: 1; min-width: 340px; display: none; }
+        .container { max-width: 1400px; margin: 0 auto; display: flex; gap: 24px; align-items: flex-start; flex-direction: column;}
+        .main-col { flex: 3; min-width: 0; width: 100%;}
+        .side-col { flex: 1; min-width: 340px; display: none; width: 100%;}
+        
+        #data-mode-ui { display: flex; gap: 24px; width: 100%; align-items: flex-start; }
 
         /* --- GLASSMORPHISM BASE CLASS --- */
         .glass-panel {
@@ -136,11 +139,103 @@
         .workout-metric { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; color:#555;}
         .workout-metric strong { color: #1d1d1f; font-weight:600; }
         .confidence-warning { background: rgba(255, 204, 0, 0.15); color: #b76e00; padding: 12px; font-size: 12px; text-align: center; font-weight:500;}
+
+        /* --- TOGGLE SWITCH & SIMPLE MODE UI --- */
+        .mode-toggle-container {
+            display: flex; justify-content: center; align-items: center; gap: 15px;
+            padding: 15px; margin-bottom: 20px; border-radius: 12px; width: 100%; box-sizing: border-box;
+        }
+        .toggle-label { font-size: 14px; font-weight: 600; color: #555; }
+        .switch { position: relative; display: inline-block; width: 60px; height: 34px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #007aff; transition: .4s; }
+        .slider:before { position: absolute; content: ""; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; transition: .4s; }
+        input:checked + .slider { background-color: #34c759; }
+        input:checked + .slider:before { transform: translateX(26px); }
+        .slider.round { border-radius: 34px; }
+        .slider.round:before { border-radius: 50%; }
+
+        #simple-mode-ui { display: flex; flex-direction: column; gap: 15px; width: 100%; max-width: 800px; margin: 0 auto; display: none; }
+        .metric-card { overflow: hidden; transition: all 0.3s ease; }
+        .metric-header { 
+            display: flex; justify-content: space-between; align-items: center; 
+            padding: 20px; cursor: pointer; 
+        }
+        .metric-title { font-size: 18px; font-weight: 600; color: #1d1d1f; }
+        .metric-value { font-size: 22px; font-weight: 700; color: #007aff; }
+
+        .metric-dropdown { 
+            max-height: 0; opacity: 0; overflow: hidden; 
+            padding: 0 20px; background: rgba(0,0,0,0.02); transition: all 0.3s ease; 
+        }
+        .metric-card.active .metric-dropdown { 
+            max-height: 500px; opacity: 1; padding: 20px; border-top: 1px solid rgba(0,0,0,0.05); 
+        }
+
+        /* --- MOBILE OPTIMIZATION --- */
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .header { padding: 15px; flex-direction: column; align-items: stretch; gap: 15px; }
+            .header-left { width: 100%; justify-content: space-between; align-items: center; }
+            
+            .header > div:last-child { 
+                width: 100%; 
+                display: flex; 
+                flex-wrap: wrap; 
+                gap: 10px; 
+                justify-content: space-between; 
+                overflow: visible; 
+            }
+            
+            .header input[type="date"], .header button, .header label.btn-upload {
+                flex: 1 1 calc(50% - 10px); 
+                min-width: 130px;
+                padding: 12px;
+                margin: 0;
+                box-sizing: border-box;
+                text-align: center;
+            }
+
+            .container { flex-direction: column; gap: 16px; }
+            #data-mode-ui { flex-direction: column; }
+            .main-col, .side-col { width: 100%; flex: none; min-width: 100%; }
+            
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+            .kpi-card { padding: 12px 15px; }
+            .kpi-card .value { font-size: 18px; }
+            
+            .chart-box { padding: 12px; }
+            .xray-panel { position: relative; max-height: 600px; top: 0; }
+        }
+
+
+        /* --- SUB-ACCORDIONS (For Sleep & Workouts) --- */
+        details.sub-accordion { border-bottom: 1px solid rgba(0,0,0,0.05); padding: 10px 0; }
+        details.sub-accordion:last-child { border-bottom: none; }
+        details.sub-accordion summary { cursor: pointer; font-size: 14px; font-weight: 600; color: #1d1d1f; outline: none; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+        details.sub-accordion summary::-webkit-details-marker { display: none; }
+        details.sub-accordion summary::after { content: '+'; color: #007aff; font-size: 18px; font-weight: 400; transition: transform 0.2s; }
+        details.sub-accordion[open] summary::after { content: '−'; }
+        .sub-content { padding-top: 12px; font-size: 13px; color: #555; }
+        .sub-row { display: flex; justify-content: space-between; padding: 5px 0; }
+        .sub-row strong { color: #1d1d1f; }
+
+
+
     </style>
 </head>
 <body>
 
 <div id="global-tooltip" class="glass-tooltip-box"></div>
+
+<div class="mode-toggle-container glass-panel">
+    <span class="toggle-label">Simple Mode</span>
+    <label class="switch">
+        <input type="checkbox" id="modeToggle" checked>
+        <span class="slider round"></span>
+    </label>
+    <span class="toggle-label">Data Mode</span>
+</div>
 
 <div id="surveyModal" class="modal-overlay">
     <div class="modal-content glass-panel">
@@ -393,7 +488,7 @@
 
 <div class="header glass-panel">
     <div class="header-left">
-        <h2>Neurovis HRV (alpha v0.16)</h2>
+        <h2>Neurovis HRV (alpha v0.23)</h2>
         <span style="font-size:13px; color:#86868b; margin-left:10px;" id="file-status">Initializing Engine...</span>
         <span id="zoom-indicator">Zoom Active</span>
     </div>
@@ -421,146 +516,226 @@
     </div>
 </div>
 
-<div class="kpi-grid">
-    <div class="kpi-card kpi-total glass-panel">
-        <h3>Total Days <span class="info-icon" data-tooltip="Total number of valid days successfully analyzed from your Apple Health export.">?</span></h3>
-        <div class="value" id="kpi-total">-</div>
-    </div>
-    <div class="kpi-card kpi-avg glass-panel">
-        <h3>Avg HRV <span class="info-icon" data-tooltip="Your overall baseline Heart Rate Variability. Higher is generally better and indicates an adaptable nervous system.">?</span></h3>
-        <div class="value" id="kpi-avg">-</div>
-    </div>
-   <div class="kpi-card kpi-morning glass-panel">
-        <h3>Avg Readiness <span class="info-icon" data-tooltip="Average Morning Readiness Score (0-100) over the selected period.">?</span></h3>
-        <div class="value" id="kpi-avg-readiness">-</div>
-    </div>
-    <div class="kpi-card kpi-morning glass-panel">
-        <h3>Avg Resting HR <span class="info-icon" data-tooltip="Average sleeping heart rate over the selected period. Lower is generally better.">?</span></h3>
-        <div class="value" id="kpi-avg-rhr">-</div>
-    </div>
-    <div class="kpi-card kpi-workout glass-panel">
-        <h3>Avg Time Asleep <span class="info-icon" data-tooltip="Your average total sleep duration per night across all recorded data.">?</span></h3>
-        <div class="value" id="kpi-avg-sleep">-</div>
-    </div>
-    <div class="kpi-card kpi-workout glass-panel">
-        <h3>Workouts / Wk <span class="info-icon" data-tooltip="The average number of workouts you log per week.">?</span></h3>
-        <div class="value" id="kpi-wk-workouts">-</div>
-    </div>
-    <div class="kpi-card kpi-workout glass-panel">
-        <h3>Workout Min / Wk <span class="info-icon" data-tooltip="The average total minutes you spend exercising per week.">?</span></h3>
-        <div class="value" id="kpi-wk-workout-min">-</div>
-    </div>
-    <div class="kpi-card kpi-7day glass-panel">
-        <h3>7D Sleep Change <span class="info-icon" data-tooltip="How your average sleep duration over the last 7 days compares to your all-time baseline.">?</span></h3>
-        <div class="value" id="kpi-7d-sleep">-</div>
-    </div>
-    <div class="kpi-card kpi-7day glass-panel">
-        <h3>7D HRV Change <span class="info-icon" data-tooltip="How your HRV over the last 7 days compares to your all-time baseline. Positive numbers mean increasing recovery.">?</span></h3>
-        <div class="value" id="kpi-7d-hrv">-</div>
-    </div>
-    <div class="kpi-card kpi-7day glass-panel">
-        <h3>7D Workouts <span class="info-icon" data-tooltip="Total number of workouts recorded in the last 7 days.">?</span></h3>
-        <div class="value" id="kpi-7d-workouts-count">-</div>
-    </div>
-    <div class="kpi-card kpi-7day glass-panel">
-        <h3>7D Min/Workout <span class="info-icon" data-tooltip="The average length of your workouts over the last 7 days.">?</span></h3>
-        <div class="value" id="kpi-7d-workout-min">-</div>
-    </div>
-    <div class="kpi-card kpi-7day glass-panel">
-        <h3>7D Readiness <span class="info-icon" data-tooltip="Change in average Readiness Score over the last 7 days compared to your total baseline.">?</span></h3>
-        <div class="value" id="kpi-7d-readiness">-</div>
-    </div>
-    <div class="kpi-card kpi-7day glass-panel">
-        <h3>7D Resting HR <span class="info-icon" data-tooltip="Change in average Resting HR over the last 7 days compared to your total baseline.">?</span></h3>
-        <div class="value" id="kpi-7d-rhr">-</div>
-    </div>
-</div>
-
 <div class="container">
-    <div class="main-col">
-        
-        <div class="chart-box glass-panel">
-            <h3>Timeline Overview <span class="info-icon" data-tooltip="The Timeline maps your daily HRV against your baseline. Green zones indicate you are primed to perform, yellow indicates systemic strain. Click any workout dot to see a heart rate breakdown.">?</span></h3>
-            <p>
-                <strong>Green:</strong> Performance | <strong>Yellow:</strong> Strained
-                <br><strong>Purple Dots:</strong> Workout Recorded (Click for Breakdown)
-            </p>
-            <div id="chart-candle" style="height: 500px;"></div>
+
+    <div id="simple-mode-ui">
+        <div class="metric-card glass-panel">
+            <div class="metric-header" onclick="toggleCard(this)">
+                <div class="metric-title">Morning Readiness</div>
+                <div class="metric-value" id="simple-readiness">--</div>
+            </div>
+            <div class="metric-dropdown">
+                <div style="font-size: 13px; color: #555; margin-bottom: 10px; font-weight: 600;">Day of Week Averages:</div>
+                <div id="simple-readiness-days">
+                    </div>
+            </div>
         </div>
 
-        <div class="chart-box glass-panel">
-            <h3>Z-Score Variance Breakdown <span class="info-icon" data-tooltip="This chart aggregates your HRV variance by day of the week to reveal structural patterns in your weekly strain or recovery cycles. Do you always crash on Thursdays? Find out here.">?</span></h3>
-            <div id="chart-weekly-calc" style="height: 350px;"></div>
+        <div class="metric-card glass-panel">
+            <div class="metric-header" onclick="toggleCard(this)">
+                <div class="metric-title">Average HRV</div>
+                <div class="metric-value" id="simple-hrv">-- ms</div>
+            </div>
+            <div class="metric-dropdown">
+                <div style="font-size: 13px; color: #555; margin-bottom: 10px; font-weight: 600;">Day of Week Averages:</div>
+                <div id="simple-hrv-days">
+                    </div>
+            </div>
         </div>
 
-        <div class="chart-box glass-panel">
-            <h3>Morning Readiness Score <span class="info-icon" data-tooltip="Calculated daily using Deep Sleep HRV (50%), Resting HR (30%), and Sleep Duration (20%). Higher scores indicate optimal recovery and readiness to train.">?</span></h3>
-            <p>A comprehensive 0-100 score weighing your nightly recovery metrics against your personal 30-day baseline.</p>
-            <div id="chart-morning" style="height: 350px;"></div>
+        <div class="metric-card glass-panel">
+            <div class="metric-header" onclick="toggleCard(this)">
+                <div class="metric-title">Avg Time Asleep (7D)</div>
+                <div class="metric-value" id="simple-sleep">-- hrs</div>
+            </div>
+            <div class="metric-dropdown">
+                <div style="font-size: 13px; color: #555; margin-bottom: 10px; font-weight: 600;">Nightly Breakdown:</div>
+                <div id="simple-sleep-days">
+                    </div>
+            </div>
         </div>
 
-        <div class="chart-box glass-panel">
-            <h3>Sleep Architecture <span class="info-icon" data-tooltip="Breaks down your time in Deep, Core, and REM sleep. Deep sleep is crucial for physical recovery, while REM is crucial for cognitive recovery.">?</span></h3>
-            <div id="chart-sleep-stages" style="height: 350px;"></div>
+        <div class="metric-card glass-panel">
+            <div class="metric-header" onclick="toggleCard(this)">
+                <div class="metric-title">Workouts (7D)</div>
+                <div class="metric-value" id="simple-workouts">--</div>
+            </div>
+            <div class="metric-dropdown">
+                <div id="simple-workout-details">
+                    </div>
+            </div>
         </div>
-
-        
     </div>
 
-    <div class="side-col" id="sidePanel">
-        <div class="xray-panel glass-panel">
-            <div class="xray-header">
-                <div>
-                    <h3 id="panel-title">Data X-Ray</h3>
-                    <div class="date" id="panel-date">-</div>
+
+    <div id="data-mode-ui">
+        
+        <div class="main-col">
+            <div class="kpi-grid">
+                <div class="kpi-card kpi-total glass-panel">
+                    <h3>Total Days <span class="info-icon" data-tooltip="Total number of valid days successfully analyzed from your Apple Health export.">?</span></h3>
+                    <div class="value" id="kpi-total">-</div>
                 </div>
-                <button class="close-btn" onclick="clearHighlights()">&times;</button>
+                <div class="kpi-card kpi-avg glass-panel">
+                    <h3>Avg HRV <span class="info-icon" data-tooltip="Your overall baseline Heart Rate Variability. Higher is generally better and indicates an adaptable nervous system.">?</span></h3>
+                    <div class="value" id="kpi-avg">-</div>
+                </div>
+               <div class="kpi-card kpi-morning glass-panel">
+                    <h3>Avg Readiness <span class="info-icon" data-tooltip="Average Morning Readiness Score (0-100) over the selected period.">?</span></h3>
+                    <div class="value" id="kpi-avg-readiness">-</div>
+                </div>
+                <div class="kpi-card kpi-morning glass-panel">
+                    <h3>Avg Resting HR <span class="info-icon" data-tooltip="Average sleeping heart rate over the selected period. Lower is generally better.">?</span></h3>
+                    <div class="value" id="kpi-avg-rhr">-</div>
+                </div>
+                <div class="kpi-card kpi-workout glass-panel">
+                    <h3>Avg Time Asleep <span class="info-icon" data-tooltip="Your average total sleep duration per night across all recorded data.">?</span></h3>
+                    <div class="value" id="kpi-avg-sleep">-</div>
+                </div>
+                <div class="kpi-card kpi-workout glass-panel">
+                    <h3>Workouts / Wk <span class="info-icon" data-tooltip="The average number of workouts you log per week.">?</span></h3>
+                    <div class="value" id="kpi-wk-workouts">-</div>
+                </div>
+                <div class="kpi-card kpi-workout glass-panel">
+                    <h3>Workout Min / Wk <span class="info-icon" data-tooltip="The average total minutes you spend exercising per week.">?</span></h3>
+                    <div class="value" id="kpi-wk-workout-min">-</div>
+                </div>
+                <div class="kpi-card kpi-7day glass-panel">
+                    <h3>7D Sleep Change <span class="info-icon" data-tooltip="How your average sleep duration over the last 7 days compares to your all-time baseline.">?</span></h3>
+                    <div class="value" id="kpi-7d-sleep">-</div>
+                </div>
+                <div class="kpi-card kpi-7day glass-panel">
+                    <h3>7D HRV Change <span class="info-icon" data-tooltip="How your HRV over the last 7 days compares to your all-time baseline. Positive numbers mean increasing recovery.">?</span></h3>
+                    <div class="value" id="kpi-7d-hrv">-</div>
+                </div>
+                <div class="kpi-card kpi-7day glass-panel">
+                    <h3>7D Workouts <span class="info-icon" data-tooltip="Total number of workouts recorded in the last 7 days.">?</span></h3>
+                    <div class="value" id="kpi-7d-workouts-count">-</div>
+                </div>
+                <div class="kpi-card kpi-7day glass-panel">
+                    <h3>7D Min/Workout <span class="info-icon" data-tooltip="The average length of your workouts over the last 7 days.">?</span></h3>
+                    <div class="value" id="kpi-7d-workout-min">-</div>
+                </div>
+                <div class="kpi-card kpi-7day glass-panel">
+                    <h3>7D Readiness <span class="info-icon" data-tooltip="Change in average Readiness Score over the last 7 days compared to your total baseline.">?</span></h3>
+                    <div class="value" id="kpi-7d-readiness">-</div>
+                </div>
+                <div class="kpi-card kpi-7day glass-panel">
+                    <h3>7D Resting HR <span class="info-icon" data-tooltip="Change in average Resting HR over the last 7 days compared to your total baseline.">?</span></h3>
+                    <div class="value" id="kpi-7d-rhr">-</div>
+                </div>
             </div>
-            
-            <div id="panel-workout-details" class="workout-breakdown">
-                <h4><span>Workout HR Breakdown</span> ⏱️</h4>
-                <div class="workout-metric"><span>Total Duration:</span> <strong id="wo-duration">-</strong></div>
-                <div class="workout-metric"><span>Recovery (<100bpm):</span> <strong id="wo-recovery">-</strong></div>
+
+            <div class="chart-box glass-panel">
+                <h3>Timeline Overview <span class="info-icon" data-tooltip="The Timeline maps your daily HRV against your baseline. Green zones indicate you are primed to perform, yellow indicates systemic strain. Click any workout dot to see a heart rate breakdown.">?</span></h3>
+                <p>
+                    <strong>Green:</strong> Performance | <strong>Yellow:</strong> Strained
+                    <br><strong>Purple Dots:</strong> Workout Recorded (Click for Breakdown)
+                </p>
+                <div id="chart-candle" style="height: 500px;"></div>
+            </div>
+
+            <div class="chart-box glass-panel">
+                <h3>Z-Score Variance Breakdown <span class="info-icon" data-tooltip="This chart aggregates your HRV variance by day of the week to reveal structural patterns in your weekly strain or recovery cycles. Do you always crash on Thursdays? Find out here.">?</span></h3>
+                <div id="chart-weekly-calc" style="height: 350px;"></div>
+            </div>
+
+            <div class="chart-box glass-panel">
+                <h3>Morning Readiness Score <span class="info-icon" data-tooltip="Calculated daily using Deep Sleep HRV (50%), Resting HR (30%), and Sleep Duration (20%). Higher scores indicate optimal recovery and readiness to train.">?</span></h3>
+                <p>A comprehensive 0-100 score weighing your nightly recovery metrics against your personal 30-day baseline.</p>
+                <div id="chart-morning" style="height: 350px;"></div>
+            </div>
+
+            <div class="chart-box glass-panel">
+                <h3>Sleep Architecture <span class="info-icon" data-tooltip="Breaks down your time in Deep, Core, and REM sleep. Deep sleep is crucial for physical recovery, while REM is crucial for cognitive recovery.">?</span></h3>
+                <div id="chart-sleep-stages" style="height: 350px;"></div>
+            </div>
+        </div>
+
+        <div class="side-col" id="sidePanel">
+            <div class="xray-panel glass-panel">
+                <div class="xray-header">
+                    <div>
+                        <h3 id="panel-title">Data X-Ray</h3>
+                        <div class="date" id="panel-date">-</div>
+                    </div>
+                    <button class="close-btn" onclick="clearHighlights()">&times;</button>
+                </div>
                 
-                <div style="margin-top: 15px; font-size:12px; font-weight:600; color:#555;">Heart Rate Zones (Minutes)</div>
-                <div class="zone-bar-container" style="display:flex; height:22px; border-radius:11px; overflow:hidden; margin-top:6px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);">
-                    <div id="zb-z1" style="background:#5ac8fa; width:0%; display:flex; align-items:center; justify-content:center; color:white; font-size:10px; font-weight:bold;" title="<120 BPM"></div>
-                    <div id="zb-z2" style="background:#34c759; width:0%; display:flex; align-items:center; justify-content:center; color:white; font-size:10px; font-weight:bold;" title="120-140 BPM"></div>
-                    <div id="zb-z3" style="background:#ffcc00; width:0%; display:flex; align-items:center; justify-content:center; color:white; font-size:10px; font-weight:bold;" title="140-160 BPM"></div>
-                    <div id="zb-z4" style="background:#ff3b30; width:0%; display:flex; align-items:center; justify-content:center; color:white; font-size:10px; font-weight:bold;" title=">160 BPM"></div>
+                <div id="panel-workout-details" class="workout-breakdown">
+                    <h4><span>Workout HR Breakdown</span> ⏱️</h4>
+                    <div class="workout-metric"><span>Total Duration:</span> <strong id="wo-duration">-</strong></div>
+                    <div class="workout-metric"><span>Recovery (<100bpm):</span> <strong id="wo-recovery">-</strong></div>
+                    
+                    <div style="margin-top: 15px; font-size:12px; font-weight:600; color:#555;">Heart Rate Zones (Minutes)</div>
+                    <div class="zone-bar-container" style="display:flex; height:22px; border-radius:11px; overflow:hidden; margin-top:6px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);">
+                        <div id="zb-z1" style="background:#5ac8fa; width:0%; display:flex; align-items:center; justify-content:center; color:white; font-size:10px; font-weight:bold;" title="<120 BPM"></div>
+                        <div id="zb-z2" style="background:#34c759; width:0%; display:flex; align-items:center; justify-content:center; color:white; font-size:10px; font-weight:bold;" title="120-140 BPM"></div>
+                        <div id="zb-z3" style="background:#ffcc00; width:0%; display:flex; align-items:center; justify-content:center; color:white; font-size:10px; font-weight:bold;" title="140-160 BPM"></div>
+                        <div id="zb-z4" style="background:#ff3b30; width:0%; display:flex; align-items:center; justify-content:center; color:white; font-size:10px; font-weight:bold;" title=">160 BPM"></div>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:10px; color:#86868b; margin-top:6px; font-weight:500;">
+                        <span><120</span>
+                        <span>120-140</span>
+                        <span>140-160</span>
+                        <span style="color:#ff3b30;">>160</span>
+                    </div>
+                    <div id="wo-high-alert" style="background:rgba(255, 59, 48, 0.1); color:#d93025; border-radius:8px; padding:10px; font-size:11px; font-weight:600; margin-top:12px; display:none; text-align:center;">
+                        ⚠️ HR > 160 BPM for <span id="wo-high-hr-flag"></span> mins
+                    </div>
                 </div>
-                <div style="display:flex; justify-content:space-between; font-size:10px; color:#86868b; margin-top:6px; font-weight:500;">
-                    <span><120</span>
-                    <span>120-140</span>
-                    <span>140-160</span>
-                    <span style="color:#ff3b30;">>160</span>
-                </div>
-                <div id="wo-high-alert" style="background:rgba(255, 59, 48, 0.1); color:#d93025; border-radius:8px; padding:10px; font-size:11px; font-weight:600; margin-top:12px; display:none; text-align:center;">
-                    ⚠️ HR > 160 BPM for <span id="wo-high-hr-flag"></span> mins
-                </div>
-            </div>
 
-            <div id="panel-warning" class="confidence-warning" style="display:none;">
-                Warning: Low Confidence (Only <span id="warn-count">0</span> samples)
-            </div>
-
-            <div class="stat-grid">
-                <div class="stat-item">
-                    <div class="stat-label">Daily Median <span class="info-icon" data-tooltip="The absolute middle HRV reading from this specific day.">?</span></div>
-                    <div class="stat-val" id="panel-median">-</div>
+                <div id="panel-warning" class="confidence-warning" style="display:none;">
+                    Warning: Low Confidence (Only <span id="warn-count">0</span> samples)
                 </div>
-                <div class="stat-item">
-                    <div class="stat-label">Samples <span class="info-icon" data-tooltip="The total number of clean HRV samples processed for this specific day.">?</span></div>
-                    <div class="stat-val" id="panel-samples">-</div>
-                </div>
-            </div>
 
-            <div class="xray-content" id="panel-list"></div>
+                <div class="stat-grid">
+                    <div class="stat-item">
+                        <div class="stat-label">Daily Median <span class="info-icon" data-tooltip="The absolute middle HRV reading from this specific day.">?</span></div>
+                        <div class="stat-val" id="panel-median">-</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Samples <span class="info-icon" data-tooltip="The total number of clean HRV samples processed for this specific day.">?</span></div>
+                        <div class="stat-val" id="panel-samples">-</div>
+                    </div>
+                </div>
+
+                <div class="xray-content" id="panel-list"></div>
+            </div>
         </div>
     </div>
 </div>
 
 <script>
+    // --- MODE TOGGLE & ACCORDION LOGIC ---
+    function toggleCard(element) {
+        const card = element.parentElement;
+        card.classList.toggle('active');
+    }
+
+    document.getElementById('modeToggle').addEventListener('change', function(e) {
+        const simpleUI = document.getElementById('simple-mode-ui');
+        const dataUI = document.getElementById('data-mode-ui');
+        
+        if (e.target.checked) {
+            simpleUI.style.display = 'none';
+            dataUI.style.display = 'flex'; 
+        } else {
+            simpleUI.style.display = 'flex';
+            dataUI.style.display = 'none';
+        }
+    });
+
+    // Handle mobile default mode on load
+    window.addEventListener('load', () => {
+        if (window.innerWidth <= 768) {
+            document.getElementById('modeToggle').checked = false;
+            document.getElementById('simple-mode-ui').style.display = 'flex';
+            document.getElementById('data-mode-ui').style.display = 'none';
+        }
+    });
+
+
     // --- NEW ANONYMIZATION & UUID ENGINE ---
     function getOrCreateUUID() {
         let uuid = localStorage.getItem('neurovis_research_id');
@@ -779,6 +954,121 @@
         
         document.getElementById('kpi-7d-readiness').innerText = fmtPts(readinessChange);
         document.getElementById('kpi-7d-rhr').innerText = fmtBpm(rhrChange);
+
+        // --- NEW: POPULATE SIMPLE MODE UI ---
+        // --- NEW: POPULATE SIMPLE MODE UI ---
+        if (last7.length > 0) {
+            
+            // 1. Readiness 7D Average + Baseline Variance
+            const readDiff = Math.round(l7AvgReadiness - avgReadiness);
+            const readSign = readDiff >= 0 ? "+" : "";
+            const readColor = readDiff >= 0 ? "#34c759" : "#ff3b30";
+            document.getElementById('simple-readiness').innerHTML = l7AvgReadiness > 0 
+                ? `${Math.round(l7AvgReadiness)} <span style="font-size:14px; color:${readColor}; font-weight:600; margin-left:4px;">(${readSign}${readDiff})</span>` 
+                : "--";
+
+            // 1.5 Day of Week Readiness Ranking
+            const readDaysMap = {};
+            statsSubset.forEach(d => {
+                const rScore = globalDailySummary[d.date] ? globalDailySummary[d.date].readinessScore : null;
+                if (rScore) {
+                    const dateObj = new Date(d.date + "T00:00:00");
+                    const dayName = dateObj.toLocaleDateString('en-US', {weekday: 'short'});
+                    if (!readDaysMap[dayName]) readDaysMap[dayName] = { sum: 0, count: 0 };
+                    readDaysMap[dayName].sum += rScore;
+                    readDaysMap[dayName].count++;
+                }
+            });
+            const sortedReadDays = Object.keys(readDaysMap)
+                .map(k => ({ name: k, avg: readDaysMap[k].sum / readDaysMap[k].count }))
+                .sort((a,b) => b.avg - a.avg); // Sort highest to lowest
+            
+            document.getElementById('simple-readiness-days').innerHTML = sortedReadDays.map(d => `<div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.05);"><span>${d.name}</span><strong style="color:#1d1d1f;">${Math.round(d.avg)}</strong></div>`).join('');
+
+            // 2. HRV 7D Average + Baseline Variance
+            const hrvDiff = Math.round(l7AvgHRV - avgHRV);
+            const hrvSign = hrvDiff >= 0 ? "+" : "";
+            const hrvColor = hrvDiff >= 0 ? "#34c759" : "#ff3b30";
+            document.getElementById('simple-hrv').innerHTML = `${Math.round(l7AvgHRV)} ms <span style="font-size:14px; color:${hrvColor}; font-weight:600; margin-left:4px;">(${hrvSign}${hrvDiff})</span>`;
+            const daysMap = {};
+            statsSubset.forEach(d => {
+                const dateObj = new Date(d.date + "T00:00:00");
+                const dayName = dateObj.toLocaleDateString('en-US', {weekday: 'short'});
+                if (!daysMap[dayName]) daysMap[dayName] = { sum: 0, count: 0 };
+                daysMap[dayName].sum += d.median;
+                daysMap[dayName].count++;
+            });
+            const sortedDays = Object.keys(daysMap)
+                .map(k => ({ name: k, avg: daysMap[k].sum / daysMap[k].count }))
+                .sort((a,b) => b.avg - a.avg);
+            document.getElementById('simple-hrv-days').innerHTML = sortedDays.map(d => `<div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.05);"><span>${d.name}</span><strong style="color:#1d1d1f;">${Math.round(d.avg)} ms</strong></div>`).join('');
+
+            // 3. Sleep Breakdown by Night (Last 7 Days - Most Recent First)
+            let sleepHTML = '';
+            [...last7].reverse().forEach(d => {
+                const rawDay = rawData.find(r => r.timestamp_utc.startsWith(d.date));
+                if (rawDay) {
+                    const dateObj = new Date(d.date + "T00:00:00");
+                    const dayName = dateObj.toLocaleDateString('en-US', {weekday: 'short', month: 'short', day: 'numeric'});
+                    const totalMin = (rawDay.sleep_core_min || 0) + (rawDay.sleep_deep_min || 0) + (rawDay.sleep_rem_min || 0);
+                    
+                    if (totalMin > 0) {
+                        sleepHTML += `
+                        <details class="sub-accordion">
+                            <summary><span>${dayName}</span> <span>${fmtHrs(totalMin)}</span></summary>
+                            <div class="sub-content">
+                                <div class="sub-row"><span>Deep Sleep:</span> <strong>${fmtHrs(rawDay.sleep_deep_min || 0)}</strong></div>
+                                <div class="sub-row"><span>REM Sleep:</span> <strong>${fmtHrs(rawDay.sleep_rem_min || 0)}</strong></div>
+                                <div class="sub-row"><span>Core Sleep:</span> <strong>${fmtHrs(rawDay.sleep_core_min || 0)}</strong></div>
+                            </div>
+                        </details>`;
+                    }
+                }
+            });
+            document.getElementById('simple-sleep-days').innerHTML = sleepHTML || "<div style='color:#86868b; font-size:13px;'>No sleep recorded.</div>";
+            document.getElementById('simple-sleep').innerText = fmtHrs(l7AvgSleep);
+
+            // 4. Workout Breakdown by Session (Last 7 Days - Most Recent First)
+            let workoutHTML = '';
+            [...last7].reverse().forEach(d => {
+                const wList = workoutData.filter(wo => wo.date === d.date);
+                wList.forEach((w) => {
+                    const dateObj = new Date(d.date + "T00:00:00");
+                    const dayName = dateObj.toLocaleDateString('en-US', {weekday: 'short', month: 'short', day: 'numeric'});
+                    
+                    const z = w.zone_mins || {};
+                    const isLegacy = z["<120"] !== undefined; // Backwards compatibility check
+                    
+                    if (isLegacy) {
+                        workoutHTML += `
+                        <details class="sub-accordion">
+                            <summary><span>${dayName} Workout</span> <span>${Math.round(w.duration_min)} min</span></summary>
+                            <div class="sub-content">
+                                <div class="sub-row" style="color:#5ac8fa;"><span>< 120 bpm (Rec):</span> <strong>${Math.round(z["<120"])}m</strong></div>
+                                <div class="sub-row" style="color:#34c759;"><span>120-140 bpm:</span> <strong>${Math.round(z["120-140"])}m</strong></div>
+                                <div class="sub-row" style="color:#ffcc00;"><span>140-160 bpm:</span> <strong>${Math.round(z["140-160"])}m</strong></div>
+                                <div class="sub-row" style="color:#ff3b30;"><span>> 160 bpm:</span> <strong>${Math.round(z[">160"])}m</strong></div>
+                            </div>
+                        </details>`;
+                    } else {
+                        // NEW DYNAMIC KARVONEN ZONES
+                        workoutHTML += `
+                        <details class="sub-accordion">
+                            <summary><span>${dayName} Workout</span> <span>${Math.round(w.duration_min)} min</span></summary>
+                            <div class="sub-content">
+                                <div class="sub-row" style="color:#5ac8fa;"><span>Z1 Recovery (${z.Z1.range}):</span> <strong>${Math.round(z.Z1.mins)}m</strong></div>
+                                <div class="sub-row" style="color:#34c759; background:rgba(52,199,89,0.05); border-radius:4px; padding:6px;"><span>Z2 Optimal Base (${z.Z2.range}):</span> <strong>${Math.round(z.Z2.mins)}m</strong></div>
+                                <div class="sub-row" style="color:#ffcc00;"><span>Z3 Tempo (${z.Z3.range}):</span> <strong>${Math.round(z.Z3.mins)}m</strong></div>
+                                <div class="sub-row" style="color:#ff9500;"><span>Z4 Threshold (${z.Z4.range}):</span> <strong>${Math.round(z.Z4.mins)}m</strong></div>
+                                <div class="sub-row" style="color:#ff3b30;"><span>Z5 Anaerobic (${z.Z5.range}):</span> <strong>${Math.round(z.Z5.mins)}m</strong></div>
+                            </div>
+                        </details>`;
+                    }
+                });
+            });
+            document.getElementById('simple-workout-details').innerHTML = workoutHTML || "<div style='color:#86868b; font-size:13px;'>No workouts recorded.</div>";
+            document.getElementById('simple-workouts').innerText = l7SumWorkouts;
+        }
 
         const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
         let dayHRVSums = [0,0,0,0,0,0,0];
@@ -1134,6 +1424,12 @@
 
     function showXRay(dateStr) {
         document.getElementById('sidePanel').style.display = 'block';
+        
+        // Auto-scroll on mobile devices
+        if (window.innerWidth <= 768) {
+            document.getElementById('sidePanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
         const targetDate = String(dateStr).split(' ')[0];
         
         const dateObj = new Date(targetDate + "T00:00:00");
@@ -1163,24 +1459,41 @@
             document.getElementById('wo-recovery').innerText = dayWorkout.recovery_time_min ? dayWorkout.recovery_time_min + " min" : "N/A";
             
             const zTotal = dayWorkout.duration_min || 1; 
-            const zones = dayWorkout.zone_mins || {"<120": 0, "120-140": 0, "140-160": 0, ">160": 0};
-            
-            document.getElementById('zb-z1').style.width = (zones["<120"] / zTotal * 100) + "%";
-            document.getElementById('zb-z1').innerText = zones["<120"] > 5 ? Math.round(zones["<120"]) : "";
-            
-            document.getElementById('zb-z2').style.width = (zones["120-140"] / zTotal * 100) + "%";
-            document.getElementById('zb-z2').innerText = zones["120-140"] > 5 ? Math.round(zones["120-140"]) : "";
-            
-            document.getElementById('zb-z3').style.width = (zones["140-160"] / zTotal * 100) + "%";
-            document.getElementById('zb-z3').innerText = zones["140-160"] > 5 ? Math.round(zones["140-160"]) : "";
-            
-            document.getElementById('zb-z4').style.width = (zones[">160"] / zTotal * 100) + "%";
-            document.getElementById('zb-z4').innerText = zones[">160"] > 5 ? Math.round(zones[">160"]) : "";
+            const zones = dayWorkout.zone_mins || {};
+            const isLegacy = zones["<120"] !== undefined;
+
+            if (isLegacy) {
+                // ... fallback for old data ...
+                document.getElementById('zb-z1').style.width = (zones["<120"] / zTotal * 100) + "%";
+                document.getElementById('zb-z2').style.width = (zones["120-140"] / zTotal * 100) + "%";
+                document.getElementById('zb-z3').style.width = (zones["140-160"] / zTotal * 100) + "%";
+                document.getElementById('zb-z4').style.width = (zones[">160"] / zTotal * 100) + "%";
+            } else {
+                // New Dynamic Rendering
+                document.getElementById('zb-z1').style.width = (zones.Z1.mins / zTotal * 100) + "%";
+                document.getElementById('zb-z1').innerText = zones.Z1.mins > 5 ? "Z1" : "";
+                document.getElementById('zb-z1').title = `Z1 Rec (${zones.Z1.range})`;
+
+                document.getElementById('zb-z2').style.width = (zones.Z2.mins / zTotal * 100) + "%";
+                document.getElementById('zb-z2').innerText = zones.Z2.mins > 5 ? "Z2" : "";
+                document.getElementById('zb-z2').title = `Z2 Base (${zones.Z2.range})`;
+
+                document.getElementById('zb-z3').style.width = (zones.Z3.mins / zTotal * 100) + "%";
+                document.getElementById('zb-z3').innerText = zones.Z3.mins > 5 ? "Z3" : "";
+                document.getElementById('zb-z3').title = `Z3 Tempo (${zones.Z3.range})`;
+
+                // Combine Z4 and Z5 into the red bar for spatial constraints, or use Z4
+                const z45_mins = zones.Z4.mins + zones.Z5.mins;
+                document.getElementById('zb-z4').style.width = (z45_mins / zTotal * 100) + "%";
+                document.getElementById('zb-z4').innerText = z45_mins > 5 ? "Z4/5" : "";
+                document.getElementById('zb-z4').title = `Z4/5 High (${zones.Z4.range.split('-')[0]}+)`;
+            }
 
             const alertBox = document.getElementById('wo-high-alert');
-            if (zones[">160"] > 0) {
+            const highHrMins = isLegacy ? zones[">160"] : (zones.Z4.mins + zones.Z5.mins);
+            if (highHrMins > 0) {
                 alertBox.style.display = 'block';
-                document.getElementById('wo-high-hr-flag').innerText = Math.round(zones[">160"]);
+                document.getElementById('wo-high-hr-flag').innerText = Math.round(highHrMins);
             } else {
                 alertBox.style.display = 'none';
             }
@@ -1257,11 +1570,12 @@
             let filteredHrv = dbData.hrv;
             let filteredWorkouts = dbData.workouts;
 
+            // 1. Define dates outside the loop so we can use them to filter our metrics
+            const sDate = document.getElementById('export_start_date').value;
+            const eDate = document.getElementById('export_end_date').value;
+
             // Apply Date Filters ONLY if they are doing a raw export
             if (exportType === 'raw') {
-                const sDate = document.getElementById('export_start_date').value;
-                const eDate = document.getElementById('export_end_date').value;
-                
                 if (sDate || eDate) {
                     filteredHrv = filteredHrv.filter(d => {
                         const dStr = d.timestamp_utc.split('T')[0];
@@ -1293,12 +1607,34 @@
                     finalPayload = generateAnonymizedPayload(dbData, surveyReq.result);
                     filename = `neurovis_anonymous_summary_${new Date().toISOString().split('T')[0]}.json`;
                 } else {
-                    // Dumps the filtered raw data
+                    // --- NEW LOGIC: EXTRACT PRE-CALCULATED 30-DAY BASELINE SCORES ---
+                    let filteredSummaries = {};
+                    let morning_readings = [];
+                    
+                    if (typeof globalDailySummary !== 'undefined') {
+                        Object.keys(globalDailySummary).forEach(dateStr => {
+                            let passStart = sDate ? dateStr >= sDate : true;
+                            let passEnd = eDate ? dateStr <= eDate : true;
+                            if (passStart && passEnd) {
+                                filteredSummaries[dateStr] = globalDailySummary[dateStr];
+                                if (globalDailySummary[dateStr].readinessScore) {
+                                    morning_readings.push({
+                                        date: dateStr,
+                                        score: globalDailySummary[dateStr].readinessScore
+                                    });
+                                }
+                            }
+                        });
+                    }
+
+                    // Dumps the filtered raw data PLUS the pre-calculated metrics
                     finalPayload = {
                         export_type: "raw_details",
                         export_date: new Date().toISOString(),
                         user_profile: surveyReq.result || {},
-                        data: filteredData
+                        data: filteredData,
+                        daily_metrics: filteredSummaries,
+                        morning_readings: morning_readings
                     };
                     filename = `neurovis_raw_details_${new Date().toISOString().split('T')[0]}.json`;
                 }
@@ -1601,7 +1937,7 @@ from js import postMessage
 def send_update(msg):
     postMessage(json.dumps({"status": "progress", "message": msg}))
 
-def process_zip_stream(zip_bytes, last_sync_str):
+def process_zip_stream(zip_bytes, last_sync_str, user_age=35, user_rhr=60):
     send_update("Unzipping file...")
     zf = zipfile.ZipFile(io.BytesIO(zip_bytes.to_py()))
     
@@ -1735,7 +2071,22 @@ def process_zip_stream(zip_bytes, last_sync_str):
     for w in workout_intervals:
         w_start, w_end = w['start'], w['end']
         recovery_min = None
-        zone_mins = {"<120": 0, "120-140": 0, "140-160": 0, ">160": 0}
+        
+        # Karvonen Formula calculation
+        mhr = 220 - float(user_age)
+        hrr = mhr - float(user_rhr)
+        z1 = float(user_rhr) + (hrr * 0.6)
+        z2 = float(user_rhr) + (hrr * 0.7)
+        z3 = float(user_rhr) + (hrr * 0.8)
+        z4 = float(user_rhr) + (hrr * 0.9)
+        
+        zone_mins = {
+            "Z1": {"range": f"<{int(z1)}", "mins": 0},
+            "Z2": {"range": f"{int(z1)}-{int(z2)}", "mins": 0},
+            "Z3": {"range": f"{int(z2)}-{int(z3)}", "mins": 0},
+            "Z4": {"range": f"{int(z3)}-{int(z4)}", "mins": 0},
+            "Z5": {"range": f">{int(z4)}", "mins": 0}
+        }
         
         if w_start.strftime('%Y-%m-%d') not in [d for d, c in daily_hrv_counts.items() if c >= AFIB_THRESHOLD]:
             continue
@@ -1745,10 +2096,11 @@ def process_zip_stream(zip_bytes, last_sync_str):
             if not hr_in.empty:
                 tot = len(hr_in)
                 dur = w['duration']
-                zone_mins["<120"] = round(len(hr_in[hr_in['bpm'] < 120]) / tot * dur, 1)
-                zone_mins["120-140"] = round(len(hr_in[(hr_in['bpm'] >= 120) & (hr_in['bpm'] < 140)]) / tot * dur, 1)
-                zone_mins["140-160"] = round(len(hr_in[(hr_in['bpm'] >= 140) & (hr_in['bpm'] < 160)]) / tot * dur, 1)
-                zone_mins[">160"] = round(len(hr_in[hr_in['bpm'] >= 160]) / tot * dur, 1)
+                zone_mins["Z1"]["mins"] = round(len(hr_in[hr_in['bpm'] < z1]) / tot * dur, 1)
+                zone_mins["Z2"]["mins"] = round(len(hr_in[(hr_in['bpm'] >= z1) & (hr_in['bpm'] < z2)]) / tot * dur, 1)
+                zone_mins["Z3"]["mins"] = round(len(hr_in[(hr_in['bpm'] >= z2) & (hr_in['bpm'] < z3)]) / tot * dur, 1)
+                zone_mins["Z4"]["mins"] = round(len(hr_in[(hr_in['bpm'] >= z3) & (hr_in['bpm'] < z4)]) / tot * dur, 1)
+                zone_mins["Z5"]["mins"] = round(len(hr_in[hr_in['bpm'] >= z4]) / tot * dur, 1)
 
             hr_post = df_hr[(df_hr.index > w_end) & (df_hr.index <= w_end + timedelta(hours=2))]
             for ts, row in hr_post.iterrows():
@@ -1832,7 +2184,8 @@ def process_zip_stream(zip_bytes, last_sync_str):
             if (e.data.type === 'PROCESS_ZIP') {
                 try {
                     let process_func = self.pyodide.globals.get('process_zip_stream');
-                    let resultStr = process_func(e.data.zipBytes, e.data.lastSyncDate || "");
+                    // NEW: Pass the age and resting HR from the JavaScript event into Python!
+                    let resultStr = process_func(e.data.zipBytes, e.data.lastSyncDate || "", e.data.userAge || 35, e.data.userRhr || 60);
                     
                     let resultJson = JSON.parse(resultStr);
                     if (resultJson.error) throw new Error(resultJson.error);
@@ -1945,17 +2298,36 @@ def process_zip_stream(zip_bytes, last_sync_str):
         const file = event.target.files[0];
         if (!file) return;
 
-        statusText.innerText = "Checking existing data...";
-        const lastSyncDate = await getLastSyncDate();
+        statusText.innerText = "Checking existing profile & data...";
+        
+        // Grab User Age from Profile and RHR from current data
+        let userAge = 35; 
+        let userRhr = 60;
+        if (db) {
+            const tx = db.transaction(['surveyData'], 'readonly');
+            const req = tx.objectStore('surveyData').get('user_profile');
+            await new Promise(r => { req.onsuccess = () => r(); req.onerror = () => r(); });
+            if (req.result && req.result.age) {
+                userAge = parseInt(req.result.age.split('-')[0]) || 35; // Extracts "35" from "35-44"
+            }
+            // Use the most recent resting HR if available
+            const days = Object.keys(globalDailySummary || {});
+            if (days.length > 0 && globalDailySummary[days[days.length-1]].restingHR) {
+                userRhr = globalDailySummary[days[days.length-1]].restingHR;
+            }
+        }
 
-        statusText.innerText = lastSyncDate ? `Found prior data. Extracting records after ${lastSyncDate.split('T')[0]}...` : "Extracting Zip...";
+        const lastSyncDate = await getLastSyncDate();
+        statusText.innerText = lastSyncDate ? `Extracting records after ${lastSyncDate.split('T')[0]}...` : "Extracting Zip...";
         
         const reader = new FileReader();
         reader.onload = function(e) {
             pyWorker.postMessage({ 
                 type: 'PROCESS_ZIP', 
                 zipBytes: new Uint8Array(e.target.result),
-                lastSyncDate: lastSyncDate // Pass the cutoff date to the worker
+                lastSyncDate: lastSyncDate,
+                userAge: userAge,
+                userRhr: userRhr
             });
         };
         reader.readAsArrayBuffer(file);
