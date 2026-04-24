@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeurovisHRV Agent</title>
+    <style>
+        /* Apple-inspired Typography and Ambient Background */
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            padding: 20px; 
+            margin: 0;
+            background: linear-gradient(135deg, #e0eafc 0%, #cfdef3 100%); 
+            background-attachment: fixed;
+            color: #1d1d1f; 
+            display: flex;
+            justify-content: center;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+
+        /* Glassmorphism Container */
+        .chat-container {
+            width: 100%;
+            max-width: 900px;
+            background: rgba(255, 255, 255, 0.65);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.05);
+            border-radius: 24px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Header / Logo Area */
+        .header {
+            padding: 20px 30px;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255,255,255,0.4);
+        }
+
+        .logo {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            color: #1d1d1f;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .logo span {
+            font-size: 14px;
+            color: #007aff;
+            font-weight: 600;
+            background: rgba(0, 122, 255, 0.1);
+            padding: 4px 10px;
+            border-radius: 12px;
+        }
+
+        .status {
+            font-size: 13px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .status::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: currentColor; /* Inherits the color applied to the parent via JS */
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        /* Chat History Area */
+        .chat-history {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .message {
+            max-width: 80%;
+            line-height: 1.5;
+            font-size: 15px;
+            padding: 14px 20px;
+            border-radius: 18px;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        .message.agent {
+            align-self: flex-start;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(0,0,0,0.05);
+            color: #1d1d1f;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: #007aff;
+            color: white;
+            border-bottom-right-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0, 122, 255, 0.2);
+        }
+
+        /* Format markdown outputs in agent bubbles */
+        .message.agent pre { background: rgba(0,0,0,0.05); padding: 10px; border-radius: 8px; overflow-x: auto; }
+        .message.agent code { font-family: monospace; font-size: 13px; }
+
+        /* Input Area */
+        .input-area {
+            padding: 20px 30px;
+            background: rgba(255,255,255,0.4);
+            border-top: 1px solid rgba(0,0,0,0.05);
+            display: flex;
+            gap: 15px;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 16px 20px;
+            border: 1px solid rgba(0,0,0,0.1);
+            border-radius: 16px;
+            font-size: 15px;
+            font-family: inherit;
+            background: rgba(255,255,255,0.8);
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .chat-input:focus { border-color: #007aff; }
+
+        .send-btn {
+            background: #1d1d1f;
+            color: white;
+            border: none;
+            border-radius: 16px;
+            padding: 0 24px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s, background 0.2s;
+        }
+
+        .send-btn:hover { background: #333; transform: scale(1.02); }
+        .send-btn:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+
+        /* Loading Indicator */
+        .typing-indicator {
+            display: none;
+            align-self: flex-start;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 14px 20px;
+            border-radius: 18px;
+            border-bottom-left-radius: 4px;
+            color: #86868b;
+            font-size: 14px;
+            font-weight: 500;
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    </style>
+</head>
+<body>
+
+<div class="chat-container">
+    <div class="header">
+        <div class="logo">NEUROVIS <span>HRV Agent</span></div>
+        <div style="display: flex; gap: 15px; align-items: center;">
+            <div class="status" id="engineStatus" style="color: #ff9500;">Awaiting Data Upload</div>
+            <input type="file" id="jsonUpload" accept=".json" style="display: none;" onchange="uploadJsonData(event)">
+            <button class="send-btn" style="padding: 8px 16px; font-size: 13px; border-radius: 12px; background: #007aff;" onclick="document.getElementById('jsonUpload').click()">Upload JSON</button>
+        </div>
+    </div>
+
+    <div class="chat-history" id="chatBox">
+        <div class="message agent">Hello. I am the Neurovis Clinical Analyst. Please upload your latest biometric JSON export to initialize my engine.</div>
+        <div class="typing-indicator" id="typingIndicator">Analyzing data...</div>
+    </div>
+
+    <div class="input-area">
+        <input type="text" class="chat-input" id="userInput" placeholder="Ask about your readiness, HRV trends, or workouts..." onkeypress="handleKeyPress(event)">
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
+    </div>
+</div>
+
+<script>
+    const chatBox = document.getElementById('chatBox');
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const typingIndicator = document.getElementById('typingIndicator');
+
+    function appendMessage(text, sender) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `message ${sender}`;
+        
+        // Simple line break parsing for basic markdown formatting from Python
+        msgDiv.innerHTML = text.replace(/\n/g, '<br>'); 
+        
+        chatBox.insertBefore(msgDiv, typingIndicator);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    async function uploadJsonData(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        document.getElementById('engineStatus').innerText = "Uploading...";
+        document.getElementById('engineStatus').style.color = "#ffcc00";
+
+        try {
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+            
+            if (result.message && result.message.includes("Error")) {
+                throw new Error(result.message);
+            }
+            
+            document.getElementById('engineStatus').innerText = "Data Loaded & Ready";
+            document.getElementById('engineStatus').style.color = "#34c759";
+            appendMessage(`✅ **Upload Complete:** ${result.message}`, 'agent');
+        } catch (error) {
+            document.getElementById('engineStatus').innerText = "Upload Failed";
+            document.getElementById('engineStatus').style.color = "#ff3b30";
+            appendMessage(`⚠️ Failed to upload data: ${error.message}`, 'agent');
+        }
+        
+        // Reset file input so the same file can be uploaded again if necessary
+        event.target.value = '';
+    }
+
+    async function sendMessage() {
+        const text = userInput.value.trim();
+        if (!text) return;
+
+        appendMessage(text, 'user');
+        userInput.value = '';
+        userInput.disabled = true;
+        sendBtn.disabled = true;
+        typingIndicator.style.display = 'block';
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        try {
+            const response = await fetch('/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: text })
+            });
+            
+            const data = await response.json();
+            appendMessage(data.reply, 'agent');
+        } catch (error) {
+            appendMessage("⚠️ Connection error. Make sure the Python engine is running.", 'agent');
+        } finally {
+            typingIndicator.style.display = 'none';
+            userInput.disabled = false;
+            sendBtn.disabled = false;
+            userInput.focus();
+        }
+    }
+
+    function handleKeyPress(e) {
+        if (e.key === 'Enter') sendMessage();
+    }
+</script>
+
+</body>
+</html>
