@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 
 # --- NEW FASTAPI IMPORTS ---
 from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
 import uvicorn
 import sys
@@ -47,29 +47,53 @@ Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 # --- PART 1: THE ROBUST PARAMETERIZED TOOLS ---
 
-def generate_biometric_chart(metric1: str, metric2: str = None) -> str:
+def generate_biometric_chart(metric1: str, metric2: str = None, aggregation: Literal['none', 'daily_average'] = 'none') -> str:
+    """
+    Generates a visual chart of biometric data.
+    If aggregation is 'none', it plots every raw data point.
+    If aggregation is 'daily_average', it groups the data by date and plots the daily mean.
+    """
     global df_hrv, df_workouts
     try:
+        # Determine which dataframe holds metric1
         if metric1 in available_hrv_columns:
-            working_df = df_hrv.dropna(subset=['timestamp', metric1]).sort_values('timestamp')
+            base_df1 = df_hrv.copy()
         elif metric1 in available_workout_columns:
-            working_df = df_workouts.dropna(subset=['timestamp', metric1]).sort_values('timestamp')
+            base_df1 = df_workouts.copy()
         else:
             return f"Error: Metric {metric1} not found in data."
 
         plt.figure(figsize=(12, 6))
-        plt.plot(working_df['timestamp'], working_df[metric1], label=metric1, alpha=0.7, color='#007aff')
+
+        # --- Handle Metric 1 ---
+        if aggregation == 'daily_average':
+            working_df1 = base_df1.groupby('date')[metric1].mean().dropna().reset_index()
+            # Convert date to datetime for plotting
+            working_df1['plot_time'] = pd.to_datetime(working_df1['date'])
+            plt.plot(working_df1['plot_time'], working_df1[metric1], label=f"Daily Avg {metric1}", alpha=0.9, color='#007aff', marker='o')
+        else:
+            working_df1 = base_df1.dropna(subset=['timestamp', metric1]).sort_values('timestamp')
+            plt.plot(working_df1['timestamp'], working_df1[metric1], label=f"Raw {metric1}", alpha=0.7, color='#007aff')
         
+        # --- Handle Optional Metric 2 ---
         if metric2:
             if metric2 in available_hrv_columns:
-                working_df2 = df_hrv.dropna(subset=['timestamp', metric2]).sort_values('timestamp')
-                plt.plot(working_df2['timestamp'], working_df2[metric2], label=metric2, alpha=0.7, color='#34c759')
+                base_df2 = df_hrv.copy()
             elif metric2 in available_workout_columns:
-                working_df2 = df_workouts.dropna(subset=['timestamp', metric2]).sort_values('timestamp')
-                plt.plot(working_df2['timestamp'], working_df2[metric2], label=metric2, alpha=0.7, color='#34c759')
+                base_df2 = df_workouts.copy()
+            else:
+                return f"Error: Metric {metric2} not found."
 
-        plt.title(f"{metric1} {f'and {metric2}' if metric2 else ''} Over Time")
-        plt.xlabel("Time")
+            if aggregation == 'daily_average':
+                working_df2 = base_df2.groupby('date')[metric2].mean().dropna().reset_index()
+                working_df2['plot_time'] = pd.to_datetime(working_df2['date'])
+                plt.plot(working_df2['plot_time'], working_df2[metric2], label=f"Daily Avg {metric2}", alpha=0.9, color='#34c759', marker='x')
+            else:
+                working_df2 = base_df2.dropna(subset=['timestamp', metric2]).sort_values('timestamp')
+                plt.plot(working_df2['timestamp'], working_df2[metric2], label=f"Raw {metric2}", alpha=0.7, color='#34c759')
+
+        plt.title(f"{metric1} {f'and {metric2}' if metric2 else ''} ({aggregation.replace('_', ' ').title()})")
+        plt.xlabel("Date/Time")
         plt.ylabel("Value")
         plt.grid(True, alpha=0.3)
         plt.legend()
@@ -95,8 +119,13 @@ def analyze_biometric_data(
     metric2: str = None,
     start_date: str = None,
     end_date: str = None,
-    condition_col: str = None
+    condition_col: str = None,
+    sleep_stage: str = "all"
 ) -> str:
+    """
+    Analyzes biometric data. 
+    If calculating HRV (rMSSD_ms) or HR (bpm) during sleep, you can pass sleep_stage as 'deep' or 'core' to filter the data. Note: REM sleep HRV is not tracked.
+    """
     global df_hrv, df_workouts
     try:
         if metric in available_hrv_columns:
@@ -114,7 +143,7 @@ def analyze_biometric_data(
                 if working_df.empty:
                     return f"Error: No data found between {start_date} and {end_date}."
             except Exception as e:
-                return f"Error parsing dates. Ensure format is YYYY-MM-DD. Details: {e}"
+                return f"Error parsing dates. Details: {e}"
 
         if condition_col:
             if condition_col in working_df.columns:
@@ -123,6 +152,14 @@ def analyze_biometric_data(
                     return f"Error: No data found where {condition_col} is True."
             else:
                 return f"Error: {condition_col} is not a valid condition."
+
+        # --- NEW: SLEEP STAGE FILTERING ---
+        if sleep_stage.lower() == 'deep' and 'is_deep_sleep' in working_df.columns:
+            working_df = working_df[working_df['is_deep_sleep'] == True]
+            if working_df.empty: return "Error: No deep sleep data found for this period."
+        elif sleep_stage.lower() == 'core' and 'is_sleeping' in working_df.columns:
+            working_df = working_df[working_df['is_sleeping'] == True]
+            if working_df.empty: return "Error: No sleep data found for this period."
 
         if analysis_type == 'count':
             return f"There are {len(working_df)} total data points for {metric} in this period."
@@ -166,27 +203,35 @@ def analyze_biometric_data(
             return f"The overall average {metric} is {working_df[metric].mean():.2f}"
 
         elif analysis_type == 'daily_breakdown':
-            daily_avgs = working_df.groupby('date')[metric].mean().dropna().round(2)
+            daily_avgs = working_df.groupby('date')[metric].mean().dropna().round(3)
             if daily_avgs.empty:
                 return f"No daily data available for {metric}."
             
-            breakdown_str = "\n".join([f"- {date}: {val} ms" for date, val in daily_avgs.items()])
-            return f"Here is the daily breakdown for {metric} (filtered by {condition_col if condition_col else 'None'}):\n{breakdown_str}"
+            # --- NEW: AUTO-CONVERT HOURS TO MINUTES & FIX LABELS ---
+            if 'sleep' in metric.lower() and 'min' in metric.lower():
+                daily_avgs = (daily_avgs * 60).round(1) # Convert hours to minutes
+                unit_label = "minutes"
+            elif metric == 'rMSSD_ms':
+                unit_label = "ms"
+            elif metric == 'bpm':
+                unit_label = "bpm"
+            else:
+                unit_label = "units"
+                
+            breakdown_str = "\n".join([f"- {date}: {val} {unit_label}" for date, val in daily_avgs.items()])
+            return f"Here is the daily breakdown for {metric}:\n{breakdown_str}"
 
         elif analysis_type == 'list_dates':
             unique_dates = sorted(working_df['date'].dropna().unique())
-            if not unique_dates:
-                return f"No dates found in the dataset for {metric}."
-            
+            if not unique_dates: return f"No dates found."
             date_strs = [d.strftime('%Y-%m-%d') for d in unique_dates]
-            return f"There are {len(date_strs)} unique dates with {metric} data. The dates are: {', '.join(date_strs)}."
+            return f"There are {len(date_strs)} unique dates. The dates are: {', '.join(date_strs)}."
             
         elif analysis_type == 'most_recent':
             latest_date = working_df['date'].max()
             latest_data = working_df[working_df['date'] == latest_date]
             daily_avg = latest_data[metric].mean()
-            return f"The most recent data is from {latest_date}. The average {metric} on that date was {daily_avg:.2f}."
-        # --------------------------
+            return f"The most recent data is from {latest_date}. The average {metric} was {daily_avg:.2f}."
             
         else:
             return f"Error: {analysis_type} is not supported."
@@ -438,6 +483,60 @@ def run_lifestyle_correlations() -> str:
     except Exception as e:
         return f"Failed to run correlation engine: {e}"
         
+def predict_hrv_target(target_hrv: float) -> str:
+    """
+    Uses linear regression on historical daily Deep Sleep HRV to predict how many days 
+    it will take to reach a specific target HRV.
+    """
+    global df_hrv
+    import numpy as np
+    try:
+        # Filter for deep sleep HRV to maintain consistency with our other trackers
+        deep_sleep = df_hrv[df_hrv['is_deep_sleep'] == True]
+        daily_hrv = deep_sleep.groupby('date')['rMSSD_ms'].mean().dropna().reset_index()
+        
+        if len(daily_hrv) < 5:
+            return "Error: Not enough daily data points to run a reliable linear regression."
+            
+        # Convert dates to sequential numbers for the math engine
+        daily_hrv['day_num'] = pd.to_datetime(daily_hrv['date']).map(pd.Timestamp.toordinal)
+        
+        x = daily_hrv['day_num'].values
+        y = daily_hrv['rMSSD_ms'].values
+        
+        # Calculate the mathematical trendline
+        slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+        
+        last_date = pd.to_datetime(daily_hrv['date'].max())
+        last_hrv = y[-1]
+        
+        # Guardrail: If the trend is going down, it will never hit a higher target
+        if slope <= 0 and target_hrv > last_hrv:
+            return f"Your current HRV trajectory is decreasing (Slope: {slope:.3f}). Mathematically, a prediction to reach {target_hrv} ms cannot be made until the trend reverses."
+            
+        # Calculate intersection: target = slope * days + intercept
+        x_target = (target_hrv - intercept) / slope
+        days_from_last = x_target - x[-1]
+        
+        if days_from_last < 0:
+            return f"You have already mathematically surpassed this trendline."
+            
+        predicted_date = last_date + pd.Timedelta(days=int(days_from_last))
+        
+        report = f"""
+        LINEAR FORECAST REPORT:
+        - Current Trajectory: {slope:.3f} ms/day shift
+        - Target HRV: {target_hrv} ms
+        - Estimated Days to Target: ~{int(days_from_last)} days
+        - Predicted Achievement Date: {predicted_date.strftime('%Y-%m-%d')}
+        
+        *Note: This is a strict mathematical linear extrapolation of past data. Changes to your lifestyle will alter this slope.*
+        """
+        return report
+        
+    except Exception as e:
+        return f"Failed to run predictive model: {e}"
+
 
 # --- PART 2: API SERVER & LOGGING SETUP ---
 
@@ -468,6 +567,7 @@ async def startup_event():
     stats_tool = FunctionTool.from_defaults(fn=calculate_statistical_significance)
     deep_analysis_tool = FunctionTool.from_defaults(fn=run_deep_clinical_analysis)
     lifestyle_tool = FunctionTool.from_defaults(fn=run_lifestyle_correlations)
+    predict_tool = FunctionTool.from_defaults(fn=predict_hrv_target)
 
     # 2. Define System Prompt
     neurovis_system_prompt = """
@@ -481,6 +581,8 @@ async def startup_event():
     6. STRICT DATA GUARDRAIL: If a tool returns 0, NaN, or "missing data" for a requested time period, you MUST explicitly state that no data exists for those dates.
     7. STRICT DATE GUARDRAIL: If the user asks for data for "each date", "every day", or a "daily breakdown", you MUST use the `daily_breakdown` analysis_type. DO NOT use `day_of_week_average` unless they specifically ask for Monday-Sunday averages.
     8. THE "WHAT WORKS" GUARDRAIL: If the user asks "what works for me", "what affects my HRV", or asks to find trends/correlations between lifestyle habits and recovery, you MUST immediately use the `run_lifestyle_correlations` tool. Do not attempt to calculate these manually.
+    9. FORECASTING: If the user asks how long it will take to reach a specific metric or asks you to predict the future, you MUST use the `predict_hrv_target` tool.
+    10. REM HRV LIMITATION: Neurovis tracks the *duration* of REM sleep ('sleep_rem_min'), but it DOES NOT track HRV specifically during REM. If asked for REM HRV, you must explicitly explain this limitation to the user and offer Deep or Core sleep HRV instead.
 
     DOMAIN GLOSSARY:
     - "HRV" -> 'rMSSD_ms'
@@ -491,7 +593,7 @@ async def startup_event():
     # 3. Setup Agent
     print("Setting up the ReAct Agent...")
     agent = ReActAgent(
-        tools=[data_tool, chart_tool, stats_tool, deep_analysis_tool, lifestyle_tool],
+        tools=[data_tool, chart_tool, stats_tool, deep_analysis_tool, lifestyle_tool, predict_tool],
         llm=llm,
         system_prompt=neurovis_system_prompt,
         verbose=True, 
@@ -537,6 +639,14 @@ async def serve_ui():
             return f.read()
     except FileNotFoundError:
         return "<h1>Error: index.html not found. Please create it in the same directory.</h1>"
+
+@app.get("/{filename}.png")
+async def serve_image(filename: str):
+    import os
+    file_path = f"{filename}.png"
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    return {"error": "Image not found"}
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
