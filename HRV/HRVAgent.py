@@ -125,13 +125,23 @@ def analyze_biometric_data(
     """
     Analyzes biometric data. 
     If calculating HRV (rMSSD_ms) or HR (bpm) during sleep, you can pass sleep_stage as 'deep' or 'core' to filter the data. Note: REM sleep HRV is not tracked.
+    CRITICAL: Valid metrics are exactly 'rMSSD_ms', 'bpm', 'score', 'sleepMin', 'workoutMin', 'workoutsCount', 'restingHR', 'readinessScore'. Do not guess other column names.
     """
-    global df_hrv, df_workouts
+    # --- NEW: Hardcoded Guardrail to prevent LLM hallucination ---
+    if sleep_stage and sleep_stage.lower() == "rem":
+        return "Error: Clinical guidelines prohibit calculating HRV during REM sleep. Please calculate Deep or Core sleep instead."
+
+    global df_hrv, df_workouts, morning_readings
     try:
         if metric in available_hrv_columns:
             working_df = df_hrv.copy()
         elif metric in available_workout_columns:
             working_df = df_workouts.copy()
+        elif not morning_readings.empty and metric in morning_readings.columns:
+            working_df = morning_readings.copy()
+            # Generate timestamp dynamically to prevent KeyErrors in highest/lowest date functions
+            if 'timestamp' not in working_df.columns:
+                working_df['timestamp'] = pd.to_datetime(working_df['date'])
         else:
             return f"Error: '{metric}' is not a valid column."
 
@@ -186,15 +196,22 @@ def analyze_biometric_data(
             return f"Average {metric} by day of week: {day_avgs}"
             
         elif analysis_type == 'trend_slope':
-            midpoint = len(working_df) // 2
-            first_half = working_df[metric].iloc[:midpoint].mean()
-            second_half = working_df[metric].iloc[midpoint:].mean()
-            diff = second_half - first_half
-            direction = "increasing" if diff > 0 else "decreasing"
-            return f"Statistically, {metric} is {direction} over time by an average shift of {abs(diff):.2f}."
+            # Use actual linear regression to find the daily slope
+            working_df = working_df.dropna(subset=[metric, 'date']).sort_values('date')
+            x_values = range(len(working_df))
+            slope, intercept, r_value, p_value, std_err = stats.linregress(x_values, working_df[metric])
+            
+            # Convert daily slope to weekly rate
+            weekly_slope = slope * 7
+            direction = "increasing" if weekly_slope > 0 else "decreasing"
+            
+            return f"Based on linear regression, {metric} is {direction} by a precise mathematical rate of {abs(weekly_slope):.2f} units per week."
 
         elif analysis_type == 'overall_max':
             return f"The absolute maximum recorded {metric} is {working_df[metric].max():.2f}"
+
+        elif analysis_type == 'overall_sum':
+            return f"The total sum of {metric} is {working_df[metric].sum():.2f}"
             
         elif analysis_type == 'overall_min':
             return f"The absolute minimum recorded {metric} is {working_df[metric].min():.2f}"
@@ -352,6 +369,26 @@ def run_deep_clinical_analysis(start_date_1: str, end_date_1: str, start_date_2:
     global df_hrv, df_workouts, morning_readings, llm
     
     try:
+        # --- NEW: DEFENSIVE CHRONOLOGICAL SORTING & OVERLAP PREVENTION ---
+        dt_start_1 = pd.to_datetime(start_date_1)
+        dt_start_2 = pd.to_datetime(start_date_2)
+        
+        # 1. If the LLM passes the newer date as Period 1, silently swap them
+        if dt_start_1 > dt_start_2:
+            start_date_1, start_date_2 = start_date_2, start_date_1
+            end_date_1, end_date_2 = end_date_2, end_date_1
+            # Re-evaluate the datetime objects after the swap
+            dt_start_1 = pd.to_datetime(start_date_1)
+            dt_start_2 = pd.to_datetime(start_date_2)
+            
+        # 2. Prevent Data Overlap (Ensure Period 1 ends before Period 2 begins)
+        dt_end_1 = pd.to_datetime(end_date_1)
+        
+        if dt_end_1 >= dt_start_2:
+            # Shift the end of Period 1 to the day exactly before Period 2 begins
+            end_date_1 = (dt_start_2 - pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+        # --------------------------------------------
+
         r1_start = pd.to_datetime(start_date_1).strftime("%m-%d-%Y")
         r1_end = pd.to_datetime(end_date_1).strftime("%m-%d-%Y")
         r2_start = pd.to_datetime(start_date_2).strftime("%m-%d-%Y")
@@ -420,7 +457,12 @@ def run_deep_clinical_analysis(start_date_1: str, end_date_1: str, start_date_2:
 
 def run_lifestyle_correlations() -> str:
     """
-    Analyzes the entire dataset to find mathematical correlations between lifestyle habits...
+    Use this tool IMMEDIATELY when the user asks:
+    - "What affects my HRV?"
+    - "How can I optimize my routine?"
+    - "What impacts my recovery?"
+    Calculates Pearson correlations to find lifestyle impacts.
+    When returning this data to the user, you MUST include the exact word 'Pearson' and the raw numerical coefficients.
     """
     global df_hrv, df_workouts
     try:
@@ -444,7 +486,6 @@ def run_lifestyle_correlations() -> str:
         merged = pd.merge(daily_hrv, daily_workouts, on='date', how='inner')
         merged = pd.merge(merged, daily_rhr, on='date', how='inner')
         
-        # --- NEW: LAGGED DATA FOR "NEXT DAY" PREDICTIONS ---
         # Sort by date sequentially, then shift the HRV down by 1 row
         merged = merged.sort_values('date')
         merged['next_day_hrv'] = merged['deep_sleep_hrv'].shift(-1)
@@ -483,20 +524,32 @@ def run_lifestyle_correlations() -> str:
     except Exception as e:
         return f"Failed to run correlation engine: {e}"
         
-def predict_hrv_target(target_hrv: float) -> str:
+def predict_hrv_target(target_hrv: float, start_date: str = None) -> str:
     """
     Uses linear regression on historical daily Deep Sleep HRV to predict how many days 
     it will take to reach a specific target HRV.
+    If the user has recently started a new intervention/routine, you MUST pass the start_date 
+    of that routine to ensure the prediction is based on the new trajectory.
     """
     global df_hrv
     import numpy as np
     try:
         # Filter for deep sleep HRV to maintain consistency with our other trackers
-        deep_sleep = df_hrv[df_hrv['is_deep_sleep'] == True]
+        # Note the .copy() to prevent chained assignment warnings
+        deep_sleep = df_hrv[df_hrv['is_deep_sleep'] == True].copy()
+        
+        # --- NEW: Apply start_date filter if the user changed their routine ---
+        if start_date:
+            try:
+                s_date = pd.to_datetime(start_date).date()
+                deep_sleep = deep_sleep[deep_sleep['date'] >= s_date]
+            except Exception as e:
+                return f"Error parsing start_date: {e}"
+
         daily_hrv = deep_sleep.groupby('date')['rMSSD_ms'].mean().dropna().reset_index()
         
         if len(daily_hrv) < 5:
-            return "Error: Not enough daily data points to run a reliable linear regression."
+            return "Error: Not enough daily data points to run a reliable linear regression for this specific time period."
             
         # Convert dates to sequential numbers for the math engine
         daily_hrv['day_num'] = pd.to_datetime(daily_hrv['date']).map(pd.Timestamp.toordinal)
@@ -546,6 +599,7 @@ chat_history = []
 
 class ChatRequest(BaseModel):
     message: str
+    reset_state: bool = False
 
 # Intercepts the verbose ReAct logs and writes them to a file
 class LoggerWriter:
@@ -583,11 +637,15 @@ async def startup_event():
     8. THE "WHAT WORKS" GUARDRAIL: If the user asks "what works for me", "what affects my HRV", or asks to find trends/correlations between lifestyle habits and recovery, you MUST immediately use the `run_lifestyle_correlations` tool. Do not attempt to calculate these manually.
     9. FORECASTING: If the user asks how long it will take to reach a specific metric or asks you to predict the future, you MUST use the `predict_hrv_target` tool.
     10. REM HRV LIMITATION: Neurovis tracks the *duration* of REM sleep ('sleep_rem_min'), but it DOES NOT track HRV specifically during REM. If asked for REM HRV, you must explicitly explain this limitation to the user and offer Deep or Core sleep HRV instead.
+    11. THE MISSING DATE GUARDRAIL: If the user asks for a comparison or trend over a general timeframe (e.g., "the last 4 weeks" or "over time") but does not provide exact start and end dates, you MUST either calculate the exact dates yourself based on the DATASET TIME BOUNDARY, or explicitly ask the user "Which specific dates would you like me to compare?" DO NOT bypass the tools or invent the data yourself.
 
     DOMAIN GLOSSARY:
     - "HRV" -> 'rMSSD_ms'
     - "Heart Rate" -> 'bpm'
+    - "Resting Heart Rate" -> 'bpm' (You MUST pass sleep_stage='core' to get resting HR)
     - "Workout Duration" -> 'duration_min'
+    - "Workout Count" -> use 'duration_min' with analysis_type='count'
+    - "Morning Readiness" -> 'score'
     """
 
     # 3. Setup Agent
@@ -651,6 +709,12 @@ async def serve_image(filename: str):
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     global agent, chat_history, available_hrv_columns, available_workout_columns
+
+    #WIPE MEMORY FOR STATELESS TESTING
+    if request.reset_state:
+        chat_history.clear()
+        if hasattr(agent, 'memory') and agent.memory:
+            agent.memory.reset()
     
     # 1. Start the stopwatch and grab the timestamp
     start_time = time.time()
