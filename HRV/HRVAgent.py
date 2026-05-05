@@ -47,11 +47,12 @@ Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
 # --- PART 1: THE ROBUST PARAMETERIZED TOOLS ---
 
-def generate_biometric_chart(metric1: str, metric2: str = None, aggregation: Literal['none', 'daily_average'] = 'none') -> str:
+def generate_biometric_chart(metric1: str, metric2: str = None, aggregation: Literal['none', 'daily_average'] = 'none', moving_average_window: int = 0) -> str:
     """
     Generates a visual chart of biometric data.
     If aggregation is 'none', it plots every raw data point.
     If aggregation is 'daily_average', it groups the data by date and plots the daily mean.
+    If moving_average_window > 0, it overlays a rolling mean line on the daily averages.
     """
     global df_hrv, df_workouts
     try:
@@ -70,7 +71,16 @@ def generate_biometric_chart(metric1: str, metric2: str = None, aggregation: Lit
             working_df1 = base_df1.groupby('date')[metric1].mean().dropna().reset_index()
             # Convert date to datetime for plotting
             working_df1['plot_time'] = pd.to_datetime(working_df1['date'])
-            plt.plot(working_df1['plot_time'], working_df1[metric1], label=f"Daily Avg {metric1}", alpha=0.9, color='#007aff', marker='o')
+            
+            # --- NEW: Moving Average Logic for Metric 1 ---
+            if moving_average_window > 0:
+                working_df1['moving_avg'] = working_df1[metric1].rolling(window=moving_average_window).mean()
+                # Plot the raw daily average lightly in the background
+                plt.plot(working_df1['plot_time'], working_df1[metric1], label=f"Daily {metric1}", alpha=0.3, color='#007aff', linestyle='--')
+                # Plot the solid moving average line
+                plt.plot(working_df1['plot_time'], working_df1['moving_avg'], label=f"{moving_average_window}-Day MA {metric1}", alpha=1.0, color='#ff3b30', linewidth=2)
+            else:
+                plt.plot(working_df1['plot_time'], working_df1[metric1], label=f"Daily Avg {metric1}", alpha=0.9, color='#007aff', marker='o')
         else:
             working_df1 = base_df1.dropna(subset=['timestamp', metric1]).sort_values('timestamp')
             plt.plot(working_df1['timestamp'], working_df1[metric1], label=f"Raw {metric1}", alpha=0.7, color='#007aff')
@@ -87,7 +97,14 @@ def generate_biometric_chart(metric1: str, metric2: str = None, aggregation: Lit
             if aggregation == 'daily_average':
                 working_df2 = base_df2.groupby('date')[metric2].mean().dropna().reset_index()
                 working_df2['plot_time'] = pd.to_datetime(working_df2['date'])
-                plt.plot(working_df2['plot_time'], working_df2[metric2], label=f"Daily Avg {metric2}", alpha=0.9, color='#34c759', marker='x')
+                
+                # --- NEW: Moving Average Logic for Metric 2 ---
+                if moving_average_window > 0:
+                    working_df2['moving_avg'] = working_df2[metric2].rolling(window=moving_average_window).mean()
+                    plt.plot(working_df2['plot_time'], working_df2[metric2], label=f"Daily {metric2}", alpha=0.3, color='#34c759', linestyle='--')
+                    plt.plot(working_df2['plot_time'], working_df2['moving_avg'], label=f"{moving_average_window}-Day MA {metric2}", alpha=1.0, color='#ff9500', linewidth=2)
+                else:
+                    plt.plot(working_df2['plot_time'], working_df2[metric2], label=f"Daily Avg {metric2}", alpha=0.9, color='#34c759', marker='x')
             else:
                 working_df2 = base_df2.dropna(subset=['timestamp', metric2]).sort_values('timestamp')
                 plt.plot(working_df2['timestamp'], working_df2[metric2], label=f"Raw {metric2}", alpha=0.7, color='#34c759')
@@ -113,7 +130,7 @@ def analyze_biometric_data(
     metric: str, 
     analysis_type: Literal[
         'count', 'highest_date', 'lowest_date', 
-        'overall_max', 'overall_min', 'overall_average', 'correlation', 
+        'overall_max', 'overall_min', 'overall_average', 'median', 'overall_sum', 'correlation', 
         'trend_slope', 'day_of_week_average', 'most_recent', 'list_dates', 'daily_breakdown'
     ],
     metric2: str = None,
@@ -124,10 +141,10 @@ def analyze_biometric_data(
 ) -> str:
     """
     Analyzes biometric data. 
-    If calculating HRV (rMSSD_ms) or HR (bpm) during sleep, you can pass sleep_stage as 'deep' or 'core' to filter the data. Note: REM sleep HRV is not tracked.
+    If calculating HRV (rMSSD_ms) or HR (bpm) during sleep, you can pass sleep_stage as 'sleep', 'deep', or 'core' to filter the data. Note: REM sleep HRV is not tracked.
     CRITICAL: Valid metrics are exactly 'rMSSD_ms', 'bpm', 'score', 'sleepMin', 'workoutMin', 'workoutsCount', 'restingHR', 'readinessScore'. Do not guess other column names.
     """
-    # --- NEW: Hardcoded Guardrail to prevent LLM hallucination ---
+    # --- Hardcoded Guardrail to prevent LLM hallucination ---
     if sleep_stage and sleep_stage.lower() == "rem":
         return "Error: Clinical guidelines prohibit calculating HRV during REM sleep. Please calculate Deep or Core sleep instead."
 
@@ -154,6 +171,15 @@ def analyze_biometric_data(
                     return f"Error: No data found between {start_date} and {end_date}."
             except Exception as e:
                 return f"Error parsing dates. Details: {e}"
+        # Fallback if only start_date is provided (for specific single-day queries)
+        elif start_date:
+            try:
+                s_date = pd.to_datetime(start_date).date()
+                working_df = working_df[working_df['date'] == s_date]
+                if working_df.empty:
+                    return f"Error: No data found for {start_date}."
+            except Exception as e:
+                return f"Error parsing start_date. Details: {e}"
 
         if condition_col:
             if condition_col in working_df.columns:
@@ -163,11 +189,11 @@ def analyze_biometric_data(
             else:
                 return f"Error: {condition_col} is not a valid condition."
 
-        # --- NEW: SLEEP STAGE FILTERING ---
+        # --- SLEEP STAGE FILTERING (Matches Web UI Resting Baseline) ---
         if sleep_stage.lower() == 'deep' and 'is_deep_sleep' in working_df.columns:
             working_df = working_df[working_df['is_deep_sleep'] == True]
             if working_df.empty: return "Error: No deep sleep data found for this period."
-        elif sleep_stage.lower() == 'core' and 'is_sleeping' in working_df.columns:
+        elif sleep_stage.lower() in ['core', 'sleep'] and 'is_sleeping' in working_df.columns:
             working_df = working_df[working_df['is_sleeping'] == True]
             if working_df.empty: return "Error: No sleep data found for this period."
 
@@ -218,13 +244,28 @@ def analyze_biometric_data(
             
         elif analysis_type == 'overall_average':
             return f"The overall average {metric} is {working_df[metric].mean():.2f}"
+            
+        # --- NEW: TRUE MEDIAN CALCULATION ---
+        elif analysis_type == 'median':
+            return f"The true median {metric} is {working_df[metric].median():.2f}"
+
+        elif analysis_type in ['daily_first', 'daily_last']:
+            # Sort by timestamp to ensure chronological order
+            working_df = working_df.sort_values('timestamp')
+            if analysis_type == 'daily_first':
+                daily_vals = working_df.groupby('date')[metric].first().dropna().round(3)
+            else:
+                daily_vals = working_df.groupby('date')[metric].last().dropna().round(3)
+                
+            breakdown_str = "\n".join([f"- {date}: {val}" for date, val in daily_vals.items()])
+            return f"Here is the {analysis_type} breakdown for {metric}:\n{breakdown_str}"
 
         elif analysis_type == 'daily_breakdown':
             daily_avgs = working_df.groupby('date')[metric].mean().dropna().round(3)
             if daily_avgs.empty:
                 return f"No daily data available for {metric}."
             
-            # --- NEW: AUTO-CONVERT HOURS TO MINUTES & FIX LABELS ---
+            # --- AUTO-CONVERT HOURS TO MINUTES & FIX LABELS ---
             if 'sleep' in metric.lower() and 'min' in metric.lower():
                 daily_avgs = (daily_avgs * 60).round(1) # Convert hours to minutes
                 unit_label = "minutes"
@@ -363,8 +404,11 @@ def format_percentage_diff(metric_name, val1, val2, unit=""):
 def run_deep_clinical_analysis(start_date_1: str, end_date_1: str, start_date_2: str, end_date_2: str) -> str:
     """
     Performs a comprehensive clinical comparison and statistical assessment between two date ranges.
-    Trigger this tool when the user asks to compare two periods, do a deep analysis, or run a full assessment.
-    Input formats must be 'YYYY-MM-DD' or 'MM-DD-YYYY'.
+    
+    ROUTING RULE: Use this tool ONLY when the user asks for a FULL "clinical assessment", "deep analysis", 
+    or a "comprehensive breakdown" of their overall health between two timeframes. 
+    If the user asks to compare a SINGLE specific metric (like "deep sleep duration" or "just HRV") 
+    between two months, DO NOT use this tool. Use `analyze_biometric_data` instead.
     """
     global df_hrv, df_workouts, morning_readings, llm
     
@@ -638,6 +682,8 @@ async def startup_event():
     9. FORECASTING: If the user asks how long it will take to reach a specific metric or asks you to predict the future, you MUST use the `predict_hrv_target` tool.
     10. REM HRV LIMITATION: Neurovis tracks the *duration* of REM sleep ('sleep_rem_min'), but it DOES NOT track HRV specifically during REM. If asked for REM HRV, you must explicitly explain this limitation to the user and offer Deep or Core sleep HRV instead.
     11. THE MISSING DATE GUARDRAIL: If the user asks for a comparison or trend over a general timeframe (e.g., "the last 4 weeks" or "over time") but does not provide exact start and end dates, you MUST either calculate the exact dates yourself based on the DATASET TIME BOUNDARY, or explicitly ask the user "Which specific dates would you like me to compare?" DO NOT bypass the tools or invent the data yourself.
+    12. MOVING AVERAGES: If the user asks for a moving average or trend line on a graph, you MUST pass the integer window size (e.g., 7 for a 7-day moving average) to the `moving_average_window` parameter in the `generate_biometric_chart` tool. Do not try to hack the tool by passing the same metric twice.
+    13. FIRST/LAST POINTS: If the user asks for the "first", "initial", or "last" data point of the day/night, you MUST use 'daily_first' or 'daily_last' as the analysis_type in the analyze_biometric_data tool. Do NOT use daily_breakdown.
 
     DOMAIN GLOSSARY:
     - "HRV" -> 'rMSSD_ms'
